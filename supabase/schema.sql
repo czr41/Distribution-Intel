@@ -305,11 +305,35 @@ create table if not exists audit_logs (
   created_at timestamptz not null default now()
 );
 
-create index if not exists idx_incoming_messages_status on incoming_messages(processing_status);
-create index if not exists idx_incoming_messages_received_at on incoming_messages(received_at desc);
-create index if not exists idx_verification_queue_status_priority on verification_queue(queue_status, priority);
-create index if not exists idx_outlets_city_status on outlets(city, status);
-create index if not exists idx_orders_brand_status on orders(brand_id, status);
-create index if not exists idx_bills_brand_date on bills(brand_id, bill_date desc);
-create index if not exists idx_payments_brand_status on payments(brand_id, status);
-create index if not exists idx_tasks_assigned_status on tasks(assigned_to, status);
+do $$
+begin
+  if to_regclass('public.incoming_messages') is not null then
+    create index if not exists idx_incoming_messages_status on incoming_messages(processing_status);
+    create index if not exists idx_incoming_messages_received_at on incoming_messages(received_at desc);
+  end if;
+
+  if to_regclass('public.verification_queue') is not null then
+    create index if not exists idx_verification_queue_status_priority on verification_queue(queue_status, priority);
+  end if;
+
+  if to_regclass('public.outlets') is not null then
+    create index if not exists idx_outlets_city_status on outlets(city, status);
+  end if;
+
+  if to_regclass('public.orders') is not null then
+    create index if not exists idx_orders_brand_status on orders(brand_id, status);
+  end if;
+
+  if to_regclass('public.bills') is not null then
+    create index if not exists idx_bills_brand_date on bills(brand_id, bill_date desc);
+  end if;
+
+  if to_regclass('public.payments') is not null then
+    create index if not exists idx_payments_brand_status on payments(brand_id, status);
+  end if;
+
+  if to_regclass('public.tasks') is not null then
+    create index if not exists idx_tasks_assigned_status on tasks(assigned_to, status);
+  end if;
+end
+$$;
