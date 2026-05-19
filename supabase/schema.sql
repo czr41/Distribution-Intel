@@ -1,0 +1,296 @@
+create extension if not exists "pgcrypto";
+
+create type user_role as enum (
+  'super_admin',
+  'operations_manager',
+  'admin_operator',
+  'field_executive',
+  'brand_partner_viewer',
+  'brand_partner_manager'
+);
+
+create type message_type as enum ('text', 'voice', 'image', 'document', 'location', 'video');
+create type processing_status as enum (
+  'received',
+  'processing',
+  'extraction_ready',
+  'needs_review',
+  'clarification_required',
+  'verified',
+  'rejected',
+  'linked_to_record'
+);
+
+create table users (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  email text unique,
+  phone text,
+  role user_role not null,
+  status text not null default 'active',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table brands (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  category text,
+  contact_person text,
+  contact_email text,
+  contact_phone text,
+  status text not null default 'active',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table territories (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  city text not null,
+  state text not null,
+  region text,
+  manager_id uuid references users(id),
+  status text not null default 'active',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table field_executives (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references users(id),
+  phone text not null,
+  whatsapp_number text not null,
+  territory_id uuid references territories(id),
+  manager_id uuid references users(id),
+  status text not null default 'active',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table outlets (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  owner_name text,
+  phone text,
+  whatsapp_number text,
+  address text,
+  city text not null,
+  state text,
+  pincode text,
+  latitude numeric,
+  longitude numeric,
+  category text,
+  channel_type text,
+  territory_id uuid references territories(id),
+  assigned_executive_id uuid references field_executives(id),
+  status text not null default 'prospect',
+  credit_status text,
+  payment_terms text,
+  monthly_potential numeric,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table outlet_brands (
+  id uuid primary key default gen_random_uuid(),
+  outlet_id uuid not null references outlets(id) on delete cascade,
+  brand_id uuid not null references brands(id) on delete cascade,
+  status text not null default 'active',
+  onboarded_at timestamptz,
+  unique (outlet_id, brand_id)
+);
+
+create table incoming_messages (
+  id uuid primary key default gen_random_uuid(),
+  provider text not null,
+  provider_message_id text not null,
+  sender_phone text not null,
+  sender_user_id uuid references users(id),
+  message_type message_type not null,
+  text_body text,
+  media_url text,
+  media_storage_path text,
+  latitude numeric,
+  longitude numeric,
+  received_at timestamptz not null,
+  processing_status processing_status not null default 'received',
+  raw_payload_json jsonb not null,
+  created_at timestamptz not null default now(),
+  unique (provider, provider_message_id)
+);
+
+create table message_ai_extractions (
+  id uuid primary key default gen_random_uuid(),
+  incoming_message_id uuid not null references incoming_messages(id) on delete cascade,
+  extraction_type text not null,
+  transcript_text text,
+  ocr_text text,
+  detected_language text,
+  translated_text text,
+  structured_json jsonb not null,
+  confidence_score numeric not null default 0,
+  status processing_status not null default 'needs_review',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table verification_queue (
+  id uuid primary key default gen_random_uuid(),
+  incoming_message_id uuid not null references incoming_messages(id) on delete cascade,
+  extraction_id uuid references message_ai_extractions(id) on delete set null,
+  assigned_admin_id uuid references users(id),
+  queue_status processing_status not null default 'needs_review',
+  priority text not null default 'medium',
+  review_notes text,
+  resolved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table visits (
+  id uuid primary key default gen_random_uuid(),
+  outlet_id uuid references outlets(id),
+  field_executive_id uuid references field_executives(id),
+  territory_id uuid references territories(id),
+  visit_datetime timestamptz not null,
+  visit_type text not null,
+  productive boolean not null default false,
+  outcome text,
+  notes text,
+  source_message_id uuid references incoming_messages(id),
+  verified_by uuid references users(id),
+  verified_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create table skus (
+  id uuid primary key default gen_random_uuid(),
+  brand_id uuid not null references brands(id) on delete cascade,
+  name text not null,
+  code text,
+  category text,
+  unit text,
+  mrp numeric,
+  status text not null default 'active'
+);
+
+create table orders (
+  id uuid primary key default gen_random_uuid(),
+  outlet_id uuid references outlets(id),
+  brand_id uuid references brands(id),
+  field_executive_id uuid references field_executives(id),
+  expected_value numeric,
+  expected_delivery_date date,
+  status text not null default 'intent_captured',
+  source_message_id uuid references incoming_messages(id),
+  verified_by uuid references users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table order_items (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references orders(id) on delete cascade,
+  sku_id uuid references skus(id),
+  quantity numeric not null,
+  unit_price numeric,
+  total_value numeric
+);
+
+create table bills (
+  id uuid primary key default gen_random_uuid(),
+  outlet_id uuid references outlets(id),
+  brand_id uuid references brands(id),
+  field_executive_id uuid references field_executives(id),
+  bill_number text,
+  bill_date date,
+  total_amount numeric,
+  payment_status text,
+  bill_image_path text,
+  ocr_text text,
+  source_message_id uuid references incoming_messages(id),
+  verified_by uuid references users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table bill_items (
+  id uuid primary key default gen_random_uuid(),
+  bill_id uuid not null references bills(id) on delete cascade,
+  sku_id uuid references skus(id),
+  quantity numeric not null,
+  unit_price numeric,
+  discount numeric,
+  tax numeric,
+  total_value numeric
+);
+
+create table payments (
+  id uuid primary key default gen_random_uuid(),
+  outlet_id uuid references outlets(id),
+  brand_id uuid references brands(id),
+  bill_id uuid references bills(id),
+  amount_due numeric not null default 0,
+  amount_collected numeric not null default 0,
+  due_date date,
+  promised_payment_date date,
+  payment_mode text,
+  status text not null default 'due',
+  risk_level text not null default 'medium',
+  source_message_id uuid references incoming_messages(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table competitor_insights (
+  id uuid primary key default gen_random_uuid(),
+  brand_id uuid references brands(id),
+  outlet_id uuid references outlets(id),
+  territory_id uuid references territories(id),
+  competitor_name text not null,
+  product_name text,
+  price_point numeric,
+  margin_or_scheme text,
+  insight_text text not null,
+  impact_level text not null default 'medium',
+  evidence_message_id uuid references incoming_messages(id),
+  verified_by uuid references users(id),
+  created_at timestamptz not null default now()
+);
+
+create table tasks (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text,
+  task_type text not null,
+  assigned_to uuid references users(id),
+  outlet_id uuid references outlets(id),
+  brand_id uuid references brands(id),
+  due_date date,
+  priority text not null default 'medium',
+  status text not null default 'open',
+  source_message_id uuid references incoming_messages(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  actor_user_id uuid references users(id),
+  action text not null,
+  entity_type text not null,
+  entity_id uuid not null,
+  previous_value_json jsonb,
+  new_value_json jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index idx_incoming_messages_status on incoming_messages(processing_status);
+create index idx_incoming_messages_received_at on incoming_messages(received_at desc);
+create index idx_verification_queue_status_priority on verification_queue(queue_status, priority);
+create index idx_outlets_city_status on outlets(city, status);
+create index idx_orders_brand_status on orders(brand_id, status);
+create index idx_bills_brand_date on bills(brand_id, bill_date desc);
+create index idx_payments_brand_status on payments(brand_id, status);
+create index idx_tasks_assigned_status on tasks(assigned_to, status);

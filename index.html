@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FieldOps Command Center</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary">
+        <div class="brand">
+          <div class="brand-mark">F</div>
+          <div>
+            <strong>FieldOps</strong>
+            <span>Distribution OS</span>
+          </div>
+        </div>
+        <nav class="nav-tabs" aria-label="Views">
+          <button class="nav-tab active" data-view="command" title="Command center">
+            <span>Command</span>
+          </button>
+          <button class="nav-tab" data-view="inbox" title="WhatsApp inbox">
+            <span>Inbox</span>
+          </button>
+          <button class="nav-tab" data-view="verification" title="Verification queue">
+            <span>Verification</span>
+          </button>
+          <button class="nav-tab" data-view="outlets" title="Outlet master">
+            <span>Outlets</span>
+          </button>
+          <button class="nav-tab" data-view="tasks" title="Tasks and payments">
+            <span>Tasks</span>
+          </button>
+          <button class="nav-tab" data-view="reports" title="Reports">
+            <span>Reports</span>
+          </button>
+          <button class="nav-tab" data-view="partners" title="Partner dashboard">
+            <span>Partners</span>
+          </button>
+          <button class="nav-tab" data-view="ops" title="Operations">
+            <span>Ops</span>
+          </button>
+        </nav>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">WhatsApp-first distribution command center</p>
+            <h1 id="view-title">Command Center</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="icon-button" id="seed-btn" title="Add field update">+</button>
+            <button class="primary-button" id="quick-add-btn">Add Master Data</button>
+            <button class="primary-button" id="verify-next-btn">Verify Next</button>
+          </div>
+        </header>
+
+        <section class="view active" id="command-view">
+          <section class="metrics-grid" aria-label="Operating metrics">
+            <article class="metric-card">
+              <span>Pending verification</span>
+              <strong id="pending-count">0</strong>
+              <small>Human-in-the-loop queue</small>
+            </article>
+            <article class="metric-card">
+              <span>Verified outlets</span>
+              <strong id="verified-count">0</strong>
+              <small>Partner-visible records</small>
+            </article>
+            <article class="metric-card">
+              <span>Field coverage</span>
+              <strong id="coverage-rate">0%</strong>
+              <small>Beat plan touched today</small>
+            </article>
+            <article class="metric-card">
+              <span>Extraction accuracy</span>
+              <strong id="accuracy-rate">0%</strong>
+              <small>AI suggestions accepted</small>
+            </article>
+          </section>
+
+          <section class="split-layout">
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Verification Queue</h2>
+                  <p>AI extracts field signals. Ops confirms what becomes official.</p>
+                </div>
+                <select id="queue-filter" aria-label="Queue filter">
+                  <option value="all">All</option>
+                  <option value="high">High confidence</option>
+                  <option value="low">Needs review</option>
+                </select>
+              </div>
+              <div class="queue-list" id="queue-list"></div>
+            </div>
+
+            <div class="panel detail-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Record Detail</h2>
+                  <p>Check extraction, evidence, and partner visibility.</p>
+                </div>
+              </div>
+              <div id="record-detail" class="record-detail"></div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="inbox-view">
+          <section class="inbox-grid">
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>WhatsApp Inbox</h2>
+                  <p>Raw inputs stay immutable and link to every downstream record.</p>
+                </div>
+                <select aria-label="Inbox filter">
+                  <option>All message types</option>
+                  <option>Text</option>
+                  <option>Voice</option>
+                  <option>Bill image</option>
+                  <option>Location</option>
+                </select>
+              </div>
+              <div class="message-list" id="message-list"></div>
+            </div>
+            <div class="phone-frame">
+              <div class="phone-header">Field WhatsApp</div>
+              <div class="chat-feed" id="chat-feed"></div>
+              <form class="chat-composer" id="message-form">
+                <input id="message-input" type="text" autocomplete="off" placeholder="Outlet: Raj Stores, 24 units, paid cash, shelf photo ok" />
+                <button type="submit">Send</button>
+              </form>
+            </div>
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>AI Draft</h2>
+                  <p>Provider interface converts messy messages into structured facts.</p>
+                </div>
+              </div>
+              <div class="extractor-card" id="extractor-card"></div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="verification-view">
+          <section class="verification-grid">
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Raw Evidence</h2>
+                  <p>Message, media, OCR, transcript, and source context.</p>
+                </div>
+              </div>
+              <div id="evidence-detail" class="evidence-detail"></div>
+            </div>
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Structured Draft</h2>
+                  <p>Approve, edit, reject, or ask the field executive for clarification.</p>
+                </div>
+              </div>
+              <div id="verification-form" class="verification-form"></div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="outlets-view">
+          <section class="table-layout">
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Outlet Master</h2>
+                  <p>Verified retailer database with visit, payment, and intelligence context.</p>
+                </div>
+                <div class="panel-actions">
+                  <input type="search" placeholder="Search outlets" aria-label="Search outlets" />
+                  <button class="primary-button" data-open-form="outlet">Add Outlet</button>
+                </div>
+              </div>
+              <div class="data-table" id="outlet-table"></div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="tasks-view">
+          <section class="ops-grid">
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Tasks & Follow-Ups</h2>
+                  <p>Operational work created from verified field signals.</p>
+                </div>
+              </div>
+              <div class="task-list" id="task-list"></div>
+            </div>
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Payment Risks</h2>
+                  <p>Outstanding collections and escalation signals.</p>
+                </div>
+              </div>
+              <div class="task-list" id="payment-list"></div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="reports-view">
+          <section class="ops-grid">
+            <article class="panel">
+              <h2>Weekly Brand Report</h2>
+              <ol class="clean-list">
+                <li>Executive summary</li>
+                <li>Market coverage and outlet expansion</li>
+                <li>Sales, orders, SKU movement, and payment status</li>
+                <li>Retailer feedback, issues, and competitor intelligence</li>
+                <li>Recommended next actions</li>
+              </ol>
+            </article>
+            <article class="panel">
+              <h2>Approval Workflow</h2>
+              <div class="module-list" id="report-list"></div>
+            </article>
+          </section>
+        </section>
+
+        <section class="view" id="partners-view">
+          <section class="partner-header">
+            <div>
+              <p class="eyebrow">Verified data only</p>
+              <h2>Brand Partner Dashboard</h2>
+            </div>
+            <div class="panel-actions">
+              <select id="partner-select" aria-label="Partner"></select>
+              <button class="primary-button" data-open-form="brand">Add Client</button>
+            </div>
+          </section>
+          <section class="partner-grid" id="partner-grid"></section>
+        </section>
+
+        <section class="view" id="ops-view">
+          <section class="ops-grid">
+            <article class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Field Team</h2>
+                  <p>Sales executives mapped to territories and WhatsApp numbers.</p>
+                </div>
+                <button class="primary-button" data-open-form="salesman">Add Salesman</button>
+              </div>
+              <div class="data-table" id="salesman-table"></div>
+            </article>
+            <article class="panel">
+              <h2>System Model</h2>
+              <ul class="clean-list">
+                <li><strong>Field:</strong> WhatsApp messages, images, voice notes, and location pings.</li>
+                <li><strong>Backend:</strong> ingestion, extraction, confidence scoring, task assignment.</li>
+                <li><strong>Internal:</strong> command center for exception handling and verification.</li>
+                <li><strong>Partners:</strong> read-only dashboards backed by verified records.</li>
+              </ul>
+            </article>
+            <article class="panel">
+              <h2>MVP Modules</h2>
+              <div class="module-list" id="module-list"></div>
+            </article>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="modal-backdrop" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow" id="modal-eyebrow">Master data</p>
+            <h2 id="modal-title">Add Record</h2>
+          </div>
+          <button class="icon-button" id="close-modal-btn" title="Close">x</button>
+        </div>
+        <form id="master-form" class="master-form"></form>
+      </section>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
