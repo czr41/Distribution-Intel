@@ -16,6 +16,20 @@ supabase/schema.sql
 
 The safest first path is Supabase Dashboard -> SQL Editor -> paste `supabase/schema.sql` -> Run.
 
+Seed starter demo data with:
+
+```txt
+supabase/seed_demo.sql
+```
+
+Enable table protection with:
+
+```txt
+supabase/enable_rls.sql
+```
+
+The app uses server-side actions with `SUPABASE_SERVICE_ROLE_KEY`, so RLS can be enabled while the backend still writes safely. Do not expose the service role key in browser code.
+
 ## 2. Environment Variables
 
 Add these variables in Vercel. Do not commit real secrets.

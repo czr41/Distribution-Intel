@@ -1,19 +1,15 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import {
-  DemoBrand,
-  DemoOutlet,
-  DemoRecord,
-  DemoSalesman,
-  initialBrands,
-  initialOutlets,
-  initialRecords,
-  initialSalesmen
-} from "./demo-data";
+import type { BrandOption, CommandCenterData, CommandRecord, OutletRow, SalesmanRow } from "./types";
 
 type View = "command" | "inbox" | "verification" | "outlets" | "tasks" | "reports" | "partners" | "ops";
 type ModalType = "outlet" | "brand" | "salesman" | null;
+type CommandCenterActions = {
+  createBrand: (formData: FormData) => Promise<void>;
+  createOutlet: (formData: FormData) => Promise<void>;
+  createSalesman: (formData: FormData) => Promise<void>;
+};
 
 const viewTitles: Record<View, string> = {
   command: "Command Center",
@@ -30,22 +26,38 @@ function money(value: number) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 }
 
-function confidenceLabel(record: DemoRecord) {
+function confidenceLabel(record: CommandRecord) {
   return record.confidence >= 0.85 ? "High confidence" : "Needs review";
 }
 
-export function CommandCenterApp() {
+export function CommandCenterApp({ initialData, actions }: { initialData: CommandCenterData; actions: CommandCenterActions }) {
   const [activeView, setActiveView] = useState<View>("command");
-  const [selectedId, setSelectedId] = useState("rec-101");
-  const [records, setRecords] = useState<DemoRecord[]>(initialRecords);
-  const [brands, setBrands] = useState<DemoBrand[]>(initialBrands);
-  const [outlets, setOutlets] = useState<DemoOutlet[]>(initialOutlets);
-  const [salesmen, setSalesmen] = useState<DemoSalesman[]>(initialSalesmen);
+  const [selectedId, setSelectedId] = useState(initialData.records[0]?.id ?? "");
+  const [records, setRecords] = useState<CommandRecord[]>(initialData.records);
+  const [brands, setBrands] = useState<BrandOption[]>(initialData.brands);
+  const [outlets, setOutlets] = useState<OutletRow[]>(initialData.outlets);
+  const [salesmen, setSalesmen] = useState<SalesmanRow[]>(initialData.salesmen);
   const [modalType, setModalType] = useState<ModalType>(null);
   const [partnerFilter, setPartnerFilter] = useState("all");
   const [messageText, setMessageText] = useState("");
 
-  const selectedRecord = records.find((record) => record.id === selectedId) ?? records[0];
+  const selectedRecord =
+    records.find((record) => record.id === selectedId) ??
+    records[0] ?? {
+      id: "empty",
+      outlet: "No records yet",
+      city: "Unassigned",
+      partner: "Unassigned",
+      fieldAgent: "Field Team",
+      type: "Visit",
+      units: 0,
+      value: 0,
+      status: "pending",
+      confidence: 0,
+      evidence: "No evidence",
+      message: "Add outlets and WhatsApp messages to populate the queue.",
+      createdAt: "--"
+    };
   const pendingCount = records.filter((record) => record.status === "pending").length;
   const verifiedCount = records.filter((record) => record.status === "verified").length;
   const highConfidenceCount = records.filter((record) => record.confidence >= 0.85).length;
@@ -77,7 +89,7 @@ export function CommandCenterApp() {
     const outletMatch = messageText.match(/outlet:\s*([^,.]+)/i);
     const partner = brands.find((brand) => messageText.toLowerCase().includes(brand.name.toLowerCase()))?.name ?? brands[0]?.name ?? "Unassigned";
     const units = unitsMatch ? Number(unitsMatch[1]) : 0;
-    const record: DemoRecord = {
+    const record: CommandRecord = {
       id: `rec-${Date.now()}`,
       outlet: outletMatch?.[1]?.trim() ?? "Unmatched Outlet",
       city: messageText.toLowerCase().includes("mumbai") ? "Mumbai" : messageText.toLowerCase().includes("pune") ? "Pune" : "Unconfirmed",
@@ -98,12 +110,13 @@ export function CommandCenterApp() {
     setMessageText("");
   }
 
-  function addMasterData(event: FormEvent<HTMLFormElement>) {
+  async function addMasterData(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const value = (key: string) => String(form.get(key) ?? "").trim();
 
     if (modalType === "outlet") {
+      await actions.createOutlet(form);
       setOutlets((current) => [
         {
           id: `outlet-${Date.now()}`,
@@ -113,7 +126,7 @@ export function CommandCenterApp() {
           city: value("city"),
           channel: value("channel"),
           brand: value("brand"),
-          status: value("status") as DemoOutlet["status"]
+          status: value("status") as OutletRow["status"]
         },
         ...current
       ]);
@@ -121,13 +134,14 @@ export function CommandCenterApp() {
     }
 
     if (modalType === "brand") {
+      await actions.createBrand(form);
       setBrands((current) => [
         {
           id: `brand-${Date.now()}`,
           name: value("name"),
           category: value("category"),
           contact: value("contact"),
-          status: value("status") as DemoBrand["status"]
+          status: value("status") as BrandOption["status"]
         },
         ...current
       ]);
@@ -135,6 +149,7 @@ export function CommandCenterApp() {
     }
 
     if (modalType === "salesman") {
+      await actions.createSalesman(form);
       setSalesmen((current) => [
         {
           id: `sales-${Date.now()}`,
@@ -142,7 +157,7 @@ export function CommandCenterApp() {
           phone: value("phone"),
           city: value("city"),
           territory: value("territory"),
-          status: value("status") as DemoSalesman["status"]
+          status: value("status") as SalesmanRow["status"]
         },
         ...current
       ]);
@@ -262,7 +277,7 @@ function Metric({ label, value, detail }: { label: string; value: string | numbe
   );
 }
 
-function QueuePanel({ records, selectedId, onSelect }: { records: DemoRecord[]; selectedId: string; onSelect: (id: string) => void }) {
+function QueuePanel({ records, selectedId, onSelect }: { records: CommandRecord[]; selectedId: string; onSelect: (id: string) => void }) {
   return (
     <div className="panel">
       <div className="panel-heading">
@@ -291,7 +306,7 @@ function QueuePanel({ records, selectedId, onSelect }: { records: DemoRecord[]; 
   );
 }
 
-function RecordDetail({ record, onVerify, onSendBack }: { record: DemoRecord; onVerify: (id: string) => void; onSendBack: (id: string) => void }) {
+function RecordDetail({ record, onVerify, onSendBack }: { record: CommandRecord; onVerify: (id: string) => void; onSendBack: (id: string) => void }) {
   return (
     <div className="panel detail-panel">
       <h2>Record Detail</h2>
@@ -336,7 +351,7 @@ function Field({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function AIDraft({ record }: { record: DemoRecord }) {
+function AIDraft({ record }: { record: CommandRecord }) {
   return (
     <div className="panel">
       <h2>AI Draft</h2>
@@ -350,7 +365,7 @@ function AIDraft({ record }: { record: DemoRecord }) {
   );
 }
 
-function OutletsView({ outlets, onAdd }: { outlets: DemoOutlet[]; onAdd: () => void }) {
+function OutletsView({ outlets, onAdd }: { outlets: OutletRow[]; onAdd: () => void }) {
   return (
     <section className="table-layout">
       <div className="panel">
@@ -393,8 +408,8 @@ function PartnersView({
   onFilter,
   onAdd
 }: {
-  brands: DemoBrand[];
-  records: DemoRecord[];
+  brands: BrandOption[];
+  records: CommandRecord[];
   partnerFilter: string;
   onFilter: (value: string) => void;
   onAdd: () => void;
@@ -445,7 +460,7 @@ function PartnersView({
   );
 }
 
-function OpsView({ salesmen, onAdd }: { salesmen: DemoSalesman[]; onAdd: () => void }) {
+function OpsView({ salesmen, onAdd }: { salesmen: SalesmanRow[]; onAdd: () => void }) {
   return (
     <section className="ops-grid">
       <article className="panel">
@@ -539,7 +554,7 @@ function ReportsView() {
   );
 }
 
-function MasterDataModal({ type, brands, onClose, onSubmit }: { type: Exclude<ModalType, null>; brands: DemoBrand[]; onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function MasterDataModal({ type, brands, onClose, onSubmit }: { type: Exclude<ModalType, null>; brands: BrandOption[]; onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   const title = type === "outlet" ? "Add Outlet" : type === "brand" ? "Add Brand Client" : "Add Salesman";
   return (
     <div className="modal-backdrop">
