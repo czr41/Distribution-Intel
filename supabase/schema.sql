@@ -1,27 +1,46 @@
 create extension if not exists "pgcrypto";
 
-create type user_role as enum (
-  'super_admin',
-  'operations_manager',
-  'admin_operator',
-  'field_executive',
-  'brand_partner_viewer',
-  'brand_partner_manager'
-);
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'user_role') then
+    create type user_role as enum (
+      'super_admin',
+      'operations_manager',
+      'admin_operator',
+      'field_executive',
+      'brand_partner_viewer',
+      'brand_partner_manager'
+    );
+  end if;
+end
+$$;
 
-create type message_type as enum ('text', 'voice', 'image', 'document', 'location', 'video');
-create type processing_status as enum (
-  'received',
-  'processing',
-  'extraction_ready',
-  'needs_review',
-  'clarification_required',
-  'verified',
-  'rejected',
-  'linked_to_record'
-);
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'message_type') then
+    create type message_type as enum ('text', 'voice', 'image', 'document', 'location', 'video');
+  end if;
+end
+$$;
 
-create table users (
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'processing_status') then
+    create type processing_status as enum (
+      'received',
+      'processing',
+      'extraction_ready',
+      'needs_review',
+      'clarification_required',
+      'verified',
+      'rejected',
+      'linked_to_record'
+    );
+  end if;
+end
+$$;
+
+create table if not exists users (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   email text unique,
@@ -32,7 +51,7 @@ create table users (
   updated_at timestamptz not null default now()
 );
 
-create table brands (
+create table if not exists brands (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   category text,
@@ -44,7 +63,7 @@ create table brands (
   updated_at timestamptz not null default now()
 );
 
-create table territories (
+create table if not exists territories (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   city text not null,
@@ -56,7 +75,7 @@ create table territories (
   updated_at timestamptz not null default now()
 );
 
-create table field_executives (
+create table if not exists field_executives (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references users(id),
   phone text not null,
@@ -68,7 +87,7 @@ create table field_executives (
   updated_at timestamptz not null default now()
 );
 
-create table outlets (
+create table if not exists outlets (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   owner_name text,
@@ -92,7 +111,7 @@ create table outlets (
   updated_at timestamptz not null default now()
 );
 
-create table outlet_brands (
+create table if not exists outlet_brands (
   id uuid primary key default gen_random_uuid(),
   outlet_id uuid not null references outlets(id) on delete cascade,
   brand_id uuid not null references brands(id) on delete cascade,
@@ -101,7 +120,7 @@ create table outlet_brands (
   unique (outlet_id, brand_id)
 );
 
-create table incoming_messages (
+create table if not exists incoming_messages (
   id uuid primary key default gen_random_uuid(),
   provider text not null,
   provider_message_id text not null,
@@ -120,7 +139,7 @@ create table incoming_messages (
   unique (provider, provider_message_id)
 );
 
-create table message_ai_extractions (
+create table if not exists message_ai_extractions (
   id uuid primary key default gen_random_uuid(),
   incoming_message_id uuid not null references incoming_messages(id) on delete cascade,
   extraction_type text not null,
@@ -135,7 +154,7 @@ create table message_ai_extractions (
   updated_at timestamptz not null default now()
 );
 
-create table verification_queue (
+create table if not exists verification_queue (
   id uuid primary key default gen_random_uuid(),
   incoming_message_id uuid not null references incoming_messages(id) on delete cascade,
   extraction_id uuid references message_ai_extractions(id) on delete set null,
@@ -148,7 +167,7 @@ create table verification_queue (
   updated_at timestamptz not null default now()
 );
 
-create table visits (
+create table if not exists visits (
   id uuid primary key default gen_random_uuid(),
   outlet_id uuid references outlets(id),
   field_executive_id uuid references field_executives(id),
@@ -164,7 +183,7 @@ create table visits (
   created_at timestamptz not null default now()
 );
 
-create table skus (
+create table if not exists skus (
   id uuid primary key default gen_random_uuid(),
   brand_id uuid not null references brands(id) on delete cascade,
   name text not null,
@@ -175,7 +194,7 @@ create table skus (
   status text not null default 'active'
 );
 
-create table orders (
+create table if not exists orders (
   id uuid primary key default gen_random_uuid(),
   outlet_id uuid references outlets(id),
   brand_id uuid references brands(id),
@@ -189,7 +208,7 @@ create table orders (
   updated_at timestamptz not null default now()
 );
 
-create table order_items (
+create table if not exists order_items (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references orders(id) on delete cascade,
   sku_id uuid references skus(id),
@@ -198,7 +217,7 @@ create table order_items (
   total_value numeric
 );
 
-create table bills (
+create table if not exists bills (
   id uuid primary key default gen_random_uuid(),
   outlet_id uuid references outlets(id),
   brand_id uuid references brands(id),
@@ -215,7 +234,7 @@ create table bills (
   updated_at timestamptz not null default now()
 );
 
-create table bill_items (
+create table if not exists bill_items (
   id uuid primary key default gen_random_uuid(),
   bill_id uuid not null references bills(id) on delete cascade,
   sku_id uuid references skus(id),
@@ -226,7 +245,7 @@ create table bill_items (
   total_value numeric
 );
 
-create table payments (
+create table if not exists payments (
   id uuid primary key default gen_random_uuid(),
   outlet_id uuid references outlets(id),
   brand_id uuid references brands(id),
@@ -243,7 +262,7 @@ create table payments (
   updated_at timestamptz not null default now()
 );
 
-create table competitor_insights (
+create table if not exists competitor_insights (
   id uuid primary key default gen_random_uuid(),
   brand_id uuid references brands(id),
   outlet_id uuid references outlets(id),
@@ -259,7 +278,7 @@ create table competitor_insights (
   created_at timestamptz not null default now()
 );
 
-create table tasks (
+create table if not exists tasks (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   description text,
@@ -275,7 +294,7 @@ create table tasks (
   updated_at timestamptz not null default now()
 );
 
-create table audit_logs (
+create table if not exists audit_logs (
   id uuid primary key default gen_random_uuid(),
   actor_user_id uuid references users(id),
   action text not null,
@@ -286,11 +305,11 @@ create table audit_logs (
   created_at timestamptz not null default now()
 );
 
-create index idx_incoming_messages_status on incoming_messages(processing_status);
-create index idx_incoming_messages_received_at on incoming_messages(received_at desc);
-create index idx_verification_queue_status_priority on verification_queue(queue_status, priority);
-create index idx_outlets_city_status on outlets(city, status);
-create index idx_orders_brand_status on orders(brand_id, status);
-create index idx_bills_brand_date on bills(brand_id, bill_date desc);
-create index idx_payments_brand_status on payments(brand_id, status);
-create index idx_tasks_assigned_status on tasks(assigned_to, status);
+create index if not exists idx_incoming_messages_status on incoming_messages(processing_status);
+create index if not exists idx_incoming_messages_received_at on incoming_messages(received_at desc);
+create index if not exists idx_verification_queue_status_priority on verification_queue(queue_status, priority);
+create index if not exists idx_outlets_city_status on outlets(city, status);
+create index if not exists idx_orders_brand_status on orders(brand_id, status);
+create index if not exists idx_bills_brand_date on bills(brand_id, bill_date desc);
+create index if not exists idx_payments_brand_status on payments(brand_id, status);
+create index if not exists idx_tasks_assigned_status on tasks(assigned_to, status);
