@@ -61,6 +61,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const pendingCount = records.filter((record) => record.status === "pending").length;
   const verifiedCount = records.filter((record) => record.status === "verified").length;
   const highConfidenceCount = records.filter((record) => record.confidence >= 0.85).length;
+  const recordCount = Math.max(records.length, 1);
 
   const visiblePartnerRecords = useMemo(
     () => records.filter((record) => record.status === "verified" && (partnerFilter === "all" || record.partner === partnerFilter)),
@@ -214,8 +215,8 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
             <section className="metrics-grid">
               <Metric label="Pending verification" value={pendingCount} detail="Human-in-the-loop queue" />
               <Metric label="Verified outlets" value={verifiedCount} detail="Partner-visible records" />
-              <Metric label="Field coverage" value={`${Math.round((verifiedCount / records.length) * 100)}%`} detail="Beat plan touched today" />
-              <Metric label="Extraction accuracy" value={`${Math.round((highConfidenceCount / records.length) * 100)}%`} detail="AI suggestions accepted" />
+              <Metric label="Field coverage" value={`${Math.round((verifiedCount / recordCount) * 100)}%`} detail="Beat plan touched today" />
+              <Metric label="Extraction accuracy" value={`${Math.round((highConfidenceCount / recordCount) * 100)}%`} detail="AI suggestions accepted" />
             </section>
             <section className="split-layout">
               <QueuePanel records={records} selectedId={selectedId} onSelect={setSelectedId} />

@@ -45,7 +45,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       .order("created_at", { ascending: false }),
     supabase
       .from("field_executives")
-      .select("id,phone,status,users(name),territories(name,city)")
+      .select("id,phone,status,users!field_executives_user_id_fkey(name),territories(name,city)")
       .order("created_at", { ascending: false })
   ]);
 
