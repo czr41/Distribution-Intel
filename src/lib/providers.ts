@@ -22,11 +22,15 @@ export interface MessagingProvider {
 export interface AudioInput {
   storagePath: string;
   mimeType: string;
+  bytes?: ArrayBuffer;
+  mediaUrl?: string;
 }
 
 export interface ImageInput {
   storagePath: string;
   mimeType: string;
+  bytes?: ArrayBuffer;
+  mediaUrl?: string;
 }
 
 export interface ExtractionInput {

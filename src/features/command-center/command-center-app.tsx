@@ -1,9 +1,9 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import type { BrandOption, CommandCenterData, CommandRecord, OutletRow, SalesmanRow, TaskRow } from "./types";
+import type { AIProviderSettings, BrandOption, CommandCenterData, CommandRecord, MetaIntegrationSettings, OutletRow, SalesmanRow, TaskRow } from "./types";
 
-type View = "command" | "inbox" | "verification" | "outlets" | "tasks" | "reports" | "partners" | "ops";
+type View = "command" | "inbox" | "verification" | "outlets" | "tasks" | "reports" | "partners" | "ops" | "integrations";
 type ModalType = "outlet" | "brand" | "salesman" | "task" | null;
 type BulkImportType = Exclude<ModalType, null>;
 type CommandCenterActions = {
@@ -11,6 +11,8 @@ type CommandCenterActions = {
   createOutlet: (formData: FormData) => Promise<void>;
   createSalesman: (formData: FormData) => Promise<void>;
   createTask: (formData: FormData) => Promise<void>;
+  saveMetaIntegration: (formData: FormData) => Promise<void>;
+  saveAIProvider: (formData: FormData) => Promise<void>;
 };
 
 const viewTitles: Record<View, string> = {
@@ -21,7 +23,8 @@ const viewTitles: Record<View, string> = {
   tasks: "Tasks & Payments",
   reports: "Reports",
   partners: "Brand Partner Dashboard",
-  ops: "Operations Model"
+  ops: "Operations Model",
+  integrations: "Integrations"
 };
 
 const bulkTemplates: Record<BulkImportType, { title: string; filename: string; columns: string[]; sample: string[] }> = {
@@ -109,6 +112,8 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const [brands, setBrands] = useState<BrandOption[]>(initialData.brands);
   const [outlets, setOutlets] = useState<OutletRow[]>(initialData.outlets);
   const [salesmen, setSalesmen] = useState<SalesmanRow[]>(initialData.salesmen);
+  const [metaIntegration, setMetaIntegration] = useState<MetaIntegrationSettings>(initialData.metaIntegration);
+  const [aiProvider, setAIProvider] = useState<AIProviderSettings>(initialData.aiProvider);
   const [tasks, setTasks] = useState<TaskRow[]>(
     initialData.tasks.length
       ? initialData.tasks
@@ -300,6 +305,49 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     setModalType(null);
   }
 
+  async function saveMetaIntegration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const value = (key: string) => String(form.get(key) ?? "").trim();
+
+    await actions.saveMetaIntegration(form);
+    setMetaIntegration((current) => ({
+      ...current,
+      displayName: value("displayName"),
+      status: value("status") as MetaIntegrationSettings["status"],
+      phoneNumberId: value("phoneNumberId"),
+      whatsappBusinessAccountId: value("whatsappBusinessAccountId"),
+      businessPortfolioId: value("businessPortfolioId"),
+      graphApiVersion: value("graphApiVersion"),
+      hasAccessToken: Boolean(value("accessToken")) || current.hasAccessToken,
+      hasAppSecret: Boolean(value("appSecret")) || current.hasAppSecret,
+      hasVerifyToken: Boolean(value("webhookVerifyToken")) || current.hasVerifyToken,
+      lastTestStatus: "Configuration saved",
+      lastError: "",
+      updatedAt: new Date().toLocaleString("en-IN")
+    }));
+  }
+
+  async function saveAIProvider(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const value = (key: string) => String(form.get(key) ?? "").trim();
+
+    await actions.saveAIProvider(form);
+    setAIProvider((current) => ({
+      ...current,
+      provider: value("provider") as AIProviderSettings["provider"],
+      model: value("model"),
+      status: value("status") as AIProviderSettings["status"],
+      baseUrl: value("baseUrl"),
+      hasApiKey: Boolean(value("apiKey")) || current.hasApiKey,
+      extractionMode: value("extractionMode") as AIProviderSettings["extractionMode"],
+      lastTestStatus: "Configuration saved",
+      lastError: "",
+      updatedAt: new Date().toLocaleString("en-IN")
+    }));
+  }
+
   function downloadTemplate(type: BulkImportType) {
     const template = bulkTemplates[type];
     const csv = [template.columns, template.sample].map((row) => row.map(csvEscape).join(",")).join("\n");
@@ -488,7 +536,8 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     ops: [
       { label: "Add Salesman", action: () => setModalType("salesman") },
       { label: "Bulk Import", action: () => openBulkImport("salesman") }
-    ]
+    ],
+    integrations: [{ label: "Copy Webhook Path", action: () => navigator.clipboard?.writeText(metaIntegration.webhookUrl) }]
   };
 
   return (
@@ -590,6 +639,14 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => setModalType("salesman")} onBulkImport={() => openBulkImport("salesman")} />}
         {activeView === "tasks" && <TasksView tasks={tasks} onAdd={() => setModalType("task")} onBulkImport={() => openBulkImport("task")} />}
         {activeView === "reports" && <ReportsView />}
+        {activeView === "integrations" && (
+          <IntegrationsView
+            metaIntegration={metaIntegration}
+            aiProvider={aiProvider}
+            onSaveMeta={saveMetaIntegration}
+            onSaveAI={saveAIProvider}
+          />
+        )}
       </main>
 
       {modalType && <MasterDataModal type={modalType} brands={brands} onClose={() => setModalType(null)} onSubmit={addMasterData} />}
@@ -930,6 +987,88 @@ function ReportsView() {
   );
 }
 
+function IntegrationsView({
+  metaIntegration,
+  aiProvider,
+  onSaveMeta,
+  onSaveAI
+}: {
+  metaIntegration: MetaIntegrationSettings;
+  aiProvider: AIProviderSettings;
+  onSaveMeta: (event: FormEvent<HTMLFormElement>) => void;
+  onSaveAI: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <section className="integrations-grid">
+      <article className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Meta WhatsApp Cloud API</h2>
+            <p>Connect the official Meta account that receives field messages and sends reminders.</p>
+          </div>
+          <span className={`tag ${metaIntegration.status === "Connected" ? "blue" : "warn"}`}>{metaIntegration.status}</span>
+        </div>
+        <div className="integration-summary">
+          <Field label="Webhook URL" value={metaIntegration.webhookUrl} />
+          <Field label="Token saved" value={metaIntegration.hasAccessToken ? "Yes" : "No"} />
+          <Field label="App secret saved" value={metaIntegration.hasAppSecret ? "Yes" : "No"} />
+          <Field label="Verify token saved" value={metaIntegration.hasVerifyToken ? "Yes" : "No"} />
+        </div>
+        <form className="master-form" onSubmit={onSaveMeta}>
+          <div className="form-grid">
+            <Input name="displayName" label="Display name" defaultValue={metaIntegration.displayName} />
+            <Input name="graphApiVersion" label="Graph API version" defaultValue={metaIntegration.graphApiVersion} />
+            <Input name="phoneNumberId" label="Phone number ID" defaultValue={metaIntegration.phoneNumberId} />
+            <Input name="whatsappBusinessAccountId" label="WhatsApp Business Account ID" defaultValue={metaIntegration.whatsappBusinessAccountId} />
+            <Input name="businessPortfolioId" label="Business portfolio ID" defaultValue={metaIntegration.businessPortfolioId} required={false} />
+            <Select name="status" label="Status" options={["Draft", "Connected", "Disabled"]} defaultValue={metaIntegration.status} />
+            <Input name="webhookVerifyToken" label="Webhook verify token" type="password" placeholder={metaIntegration.hasVerifyToken ? "Saved. Enter only to replace." : ""} required={!metaIntegration.hasVerifyToken} />
+            <Input name="accessToken" label="System user access token" type="password" placeholder={metaIntegration.hasAccessToken ? "Saved. Enter only to replace." : ""} required={!metaIntegration.hasAccessToken} />
+            <Input name="appSecret" label="Meta app secret" type="password" placeholder={metaIntegration.hasAppSecret ? "Saved. Enter only to replace." : ""} required={!metaIntegration.hasAppSecret} />
+          </div>
+          <div className="action-row">
+            <button className="approve" type="submit">Save Meta Connection</button>
+          </div>
+        </form>
+      </article>
+
+      <article className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>AI Extraction Provider</h2>
+            <p>Model adapter for text, bill images, voice notes, translations, and structured draft records.</p>
+          </div>
+          <span className={`tag ${aiProvider.status === "Connected" ? "blue" : "warn"}`}>{aiProvider.status}</span>
+        </div>
+        <div className="integration-summary">
+          <Field label="Provider" value={aiProvider.provider} />
+          <Field label="Model" value={aiProvider.model} />
+          <Field label="API key saved" value={aiProvider.hasApiKey ? "Yes" : "No"} />
+          <Field label="Mode" value={aiProvider.extractionMode} />
+        </div>
+        <form className="master-form" onSubmit={onSaveAI}>
+          <div className="form-grid">
+            <Select name="provider" label="Provider" options={["gemini", "ollama_gemma", "manual"]} defaultValue={aiProvider.provider} />
+            <Input name="model" label="Model" defaultValue={aiProvider.model} />
+            <Input name="baseUrl" label="Base URL" defaultValue={aiProvider.baseUrl} placeholder="Optional for Gemini, required for external Gemma/Ollama" required={false} />
+            <Input name="apiKey" label="API key" type="password" placeholder={aiProvider.hasApiKey ? "Saved. Enter only to replace." : "Gemini API key or external provider key"} required={!aiProvider.hasApiKey && aiProvider.provider !== "manual"} />
+            <Select name="extractionMode" label="Extraction mode" options={["structured_json", "draft_only"]} defaultValue={aiProvider.extractionMode} />
+            <Select name="status" label="Status" options={["Draft", "Connected", "Disabled"]} defaultValue={aiProvider.status} />
+          </div>
+          <div className="module-list">
+            <article className="module-card"><h3>Text</h3><p>Classifies intent and extracts outlet, payment, order, issue, and follow-up fields.</p></article>
+            <article className="module-card"><h3>Images</h3><p>Bill OCR and photo classification are routed through the provider adapter.</p></article>
+            <article className="module-card"><h3>Voice</h3><p>Audio can be transcribed, translated, and converted into verification drafts.</p></article>
+          </div>
+          <div className="action-row">
+            <button className="approve" type="submit">Save AI Provider</button>
+          </div>
+        </form>
+      </article>
+    </section>
+  );
+}
+
 function BulkImportModal({
   type,
   message,
@@ -1050,20 +1189,34 @@ function MasterDataModal({ type, brands, onClose, onSubmit }: { type: Exclude<Mo
   );
 }
 
-function Input({ name, label, required = true, type = "text" }: { name: string; label: string; required?: boolean; type?: string }) {
+function Input({
+  name,
+  label,
+  required = true,
+  type = "text",
+  defaultValue,
+  placeholder
+}: {
+  name: string;
+  label: string;
+  required?: boolean;
+  type?: string;
+  defaultValue?: string;
+  placeholder?: string;
+}) {
   return (
     <div className="form-field">
       <label htmlFor={name}>{label}</label>
-      <input id={name} name={name} type={type} required={required} />
+      <input id={name} name={name} type={type} required={required} defaultValue={defaultValue} placeholder={placeholder} />
     </div>
   );
 }
 
-function Select({ name, label, options }: { name: string; label: string; options: string[] }) {
+function Select({ name, label, options, defaultValue }: { name: string; label: string; options: string[]; defaultValue?: string }) {
   return (
     <div className="form-field">
       <label htmlFor={name}>{label}</label>
-      <select id={name} name={name} required>
+      <select id={name} name={name} required defaultValue={defaultValue}>
         {options.map((option) => (
           <option key={option} value={option}>{option}</option>
         ))}

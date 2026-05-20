@@ -1,5 +1,5 @@
 import { createSupabaseReadClient } from "@/lib/supabase/admin";
-import type { BrandOption, CommandCenterData, CommandRecord, OutletRow, SalesmanRow, TaskRow } from "./types";
+import type { AIProviderSettings, BrandOption, CommandCenterData, CommandRecord, MetaIntegrationSettings, OutletRow, SalesmanRow, TaskRow } from "./types";
 
 type OutletBrandJoin = {
   brands?: { name?: string | null } | { name?: string | null }[] | null;
@@ -36,6 +36,35 @@ type TaskResult = {
   brands?: { name?: string | null } | { name?: string | null }[] | null;
 };
 
+type IntegrationSettingsResult = {
+  id: string;
+  display_name: string | null;
+  status: string | null;
+  phone_number_id: string | null;
+  whatsapp_business_account_id: string | null;
+  business_portfolio_id: string | null;
+  graph_api_version: string | null;
+  webhook_verify_token: string | null;
+  access_token: string | null;
+  app_secret: string | null;
+  last_test_status: string | null;
+  last_error: string | null;
+  updated_at: string | null;
+};
+
+type AIProviderSettingsResult = {
+  id: string;
+  provider: string | null;
+  model: string | null;
+  status: string | null;
+  base_url: string | null;
+  api_key: string | null;
+  extraction_mode: string | null;
+  last_test_status: string | null;
+  last_error: string | null;
+  updated_at: string | null;
+};
+
 function displayStatus(status?: string | null): "Active" | "Prospect" | "Inactive" {
   if (status === "prospect") return "Prospect";
   if (status === "inactive") return "Inactive";
@@ -62,10 +91,48 @@ function displayTaskPriority(priority?: string | null): TaskRow["priority"] {
   return "Medium";
 }
 
+function displayConnectionStatus(status?: string | null): "Connected" | "Draft" | "Disabled" {
+  if (status === "connected") return "Connected";
+  if (status === "disabled") return "Disabled";
+  return "Draft";
+}
+
+function defaultMetaIntegration(): MetaIntegrationSettings {
+  return {
+    displayName: "Meta WhatsApp Cloud API",
+    status: "Draft",
+    phoneNumberId: "",
+    whatsappBusinessAccountId: "",
+    businessPortfolioId: "",
+    graphApiVersion: "v25.0",
+    webhookUrl: "/api/webhooks/whatsapp",
+    hasAccessToken: false,
+    hasAppSecret: false,
+    hasVerifyToken: false,
+    lastTestStatus: "Not tested",
+    lastError: "",
+    updatedAt: "--"
+  };
+}
+
+function defaultAIProvider(): AIProviderSettings {
+  return {
+    provider: "gemini",
+    model: "gemini-2.5-flash",
+    status: "Draft",
+    baseUrl: "",
+    hasApiKey: false,
+    extractionMode: "structured_json",
+    lastTestStatus: "Not tested",
+    lastError: "",
+    updatedAt: "--"
+  };
+}
+
 export async function getCommandCenterData(): Promise<CommandCenterData> {
   const supabase = createSupabaseReadClient();
 
-  const [brandsResult, outletsResult, salesmenResult, tasksResult] = await Promise.all([
+  const [brandsResult, outletsResult, salesmenResult, tasksResult, metaIntegrationResult, aiProviderResult] = await Promise.all([
     supabase.from("brands").select("id,name,category,contact_person,status").order("created_at", { ascending: false }),
     supabase
       .from("outlets")
@@ -78,13 +145,26 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     supabase
       .from("tasks")
       .select("id,title,description,task_type,due_date,priority,status,outlets(name),brands(name)")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("integration_settings")
+      .select("id,display_name,status,phone_number_id,whatsapp_business_account_id,business_portfolio_id,graph_api_version,webhook_verify_token,access_token,app_secret,last_test_status,last_error,updated_at")
+      .eq("provider", "meta_whatsapp")
+      .maybeSingle(),
+    supabase
+      .from("ai_provider_settings")
+      .select("id,provider,model,status,base_url,api_key,extraction_mode,last_test_status,last_error,updated_at")
       .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
   ]);
 
   if (brandsResult.error) throw new Error(brandsResult.error.message);
   if (outletsResult.error) throw new Error(outletsResult.error.message);
   if (salesmenResult.error) throw new Error(salesmenResult.error.message);
   if (tasksResult.error) throw new Error(tasksResult.error.message);
+  if (metaIntegrationResult.error) throw new Error(metaIntegrationResult.error.message);
+  if (aiProviderResult.error) throw new Error(aiProviderResult.error.message);
 
   const brands: BrandOption[] = (brandsResult.data ?? []).map((brand) => ({
     id: brand.id,
@@ -157,5 +237,41 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     };
   });
 
-  return { records, brands, outlets, salesmen, tasks };
+  const metaRow = metaIntegrationResult.data as IntegrationSettingsResult | null;
+  const metaIntegration: MetaIntegrationSettings = metaRow
+    ? {
+        id: metaRow.id,
+        displayName: metaRow.display_name ?? "Meta WhatsApp Cloud API",
+        status: displayConnectionStatus(metaRow.status),
+        phoneNumberId: metaRow.phone_number_id ?? "",
+        whatsappBusinessAccountId: metaRow.whatsapp_business_account_id ?? "",
+        businessPortfolioId: metaRow.business_portfolio_id ?? "",
+        graphApiVersion: metaRow.graph_api_version ?? "v25.0",
+        webhookUrl: "/api/webhooks/whatsapp",
+        hasAccessToken: Boolean(metaRow.access_token),
+        hasAppSecret: Boolean(metaRow.app_secret),
+        hasVerifyToken: Boolean(metaRow.webhook_verify_token),
+        lastTestStatus: metaRow.last_test_status ?? "Not tested",
+        lastError: metaRow.last_error ?? "",
+        updatedAt: metaRow.updated_at ?? "--"
+      }
+    : defaultMetaIntegration();
+
+  const aiRow = aiProviderResult.data as AIProviderSettingsResult | null;
+  const aiProvider: AIProviderSettings = aiRow
+    ? {
+        id: aiRow.id,
+        provider: aiRow.provider === "ollama_gemma" || aiRow.provider === "manual" ? aiRow.provider : "gemini",
+        model: aiRow.model ?? "gemini-2.5-flash",
+        status: displayConnectionStatus(aiRow.status),
+        baseUrl: aiRow.base_url ?? "",
+        hasApiKey: Boolean(aiRow.api_key),
+        extractionMode: aiRow.extraction_mode === "draft_only" ? "draft_only" : "structured_json",
+        lastTestStatus: aiRow.last_test_status ?? "Not tested",
+        lastError: aiRow.last_error ?? "",
+        updatedAt: aiRow.updated_at ?? "--"
+      }
+    : defaultAIProvider();
+
+  return { records, brands, outlets, salesmen, tasks, metaIntegration, aiProvider };
 }

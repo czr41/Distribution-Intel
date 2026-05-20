@@ -54,11 +54,43 @@ export type TaskRow = {
   status: "Open" | "In progress" | "Waiting for response" | "Completed" | "Cancelled" | "Overdue";
 };
 
+export type MetaIntegrationSettings = {
+  id?: string;
+  displayName: string;
+  status: "Connected" | "Draft" | "Disabled";
+  phoneNumberId: string;
+  whatsappBusinessAccountId: string;
+  businessPortfolioId: string;
+  graphApiVersion: string;
+  webhookUrl: string;
+  hasAccessToken: boolean;
+  hasAppSecret: boolean;
+  hasVerifyToken: boolean;
+  lastTestStatus: string;
+  lastError: string;
+  updatedAt: string;
+};
+
+export type AIProviderSettings = {
+  id?: string;
+  provider: "gemini" | "ollama_gemma" | "manual";
+  model: string;
+  status: "Connected" | "Draft" | "Disabled";
+  baseUrl: string;
+  hasApiKey: boolean;
+  extractionMode: "structured_json" | "draft_only";
+  lastTestStatus: string;
+  lastError: string;
+  updatedAt: string;
+};
+
 export type CommandCenterData = {
   records: CommandRecord[];
   brands: BrandOption[];
   outlets: OutletRow[];
   salesmen: SalesmanRow[];
   tasks: TaskRow[];
+  metaIntegration: MetaIntegrationSettings;
+  aiProvider: AIProviderSettings;
   setupError?: string;
 };

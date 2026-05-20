@@ -259,7 +259,8 @@ h2 {
 .split-layout,
 .inbox-grid,
 .verification-grid,
-.ops-grid {
+.ops-grid,
+.integrations-grid {
   display: grid;
   grid-template-columns: minmax(360px, 1.15fr) minmax(320px, 0.85fr);
   gap: 16px;
@@ -550,6 +551,17 @@ input {
   line-height: 1.45;
 }
 
+.integrations-grid {
+  align-items: start;
+}
+
+.integration-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -651,6 +663,7 @@ input {
   .inbox-grid,
   .verification-grid,
   .ops-grid,
+  .integrations-grid,
   .partner-grid {
     grid-template-columns: 1fr;
   }
@@ -671,6 +684,7 @@ input {
   .topbar-actions,
   .panel-actions,
   .topbar-actions button,
+  .integration-summary,
   .field-grid {
     width: 100%;
   }
@@ -680,6 +694,7 @@ input {
   }
 
   .field-grid,
+  .integration-summary,
   .draft-form,
   .table-row,
   .table-row.salesman,

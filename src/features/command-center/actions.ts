@@ -62,6 +62,33 @@ const taskSchema = z.object({
   status: z.enum(["Open", "In progress", "Waiting for response", "Completed", "Cancelled", "Overdue"])
 });
 
+const connectionStatusMap = {
+  Connected: "connected",
+  Draft: "draft",
+  Disabled: "disabled"
+} as const;
+
+const metaIntegrationSchema = z.object({
+  displayName: z.string().min(1),
+  phoneNumberId: z.string().min(1),
+  whatsappBusinessAccountId: z.string().min(1),
+  businessPortfolioId: z.string().optional(),
+  graphApiVersion: z.string().min(1),
+  webhookVerifyToken: z.string().optional(),
+  accessToken: z.string().optional(),
+  appSecret: z.string().optional(),
+  status: z.enum(["Connected", "Draft", "Disabled"])
+});
+
+const aiProviderSchema = z.object({
+  provider: z.enum(["gemini", "ollama_gemma", "manual"]),
+  model: z.string().min(1),
+  baseUrl: z.string().optional(),
+  apiKey: z.string().optional(),
+  extractionMode: z.enum(["structured_json", "draft_only"]),
+  status: z.enum(["Connected", "Draft", "Disabled"])
+});
+
 function formValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
@@ -212,6 +239,92 @@ export async function createTaskAction(formData: FormData) {
     priority: taskPriorityMap[input.priority],
     status: taskStatusMap[input.status]
   });
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+}
+
+export async function saveMetaIntegrationAction(formData: FormData) {
+  const input = metaIntegrationSchema.parse({
+    displayName: formValue(formData, "displayName"),
+    phoneNumberId: formValue(formData, "phoneNumberId"),
+    whatsappBusinessAccountId: formValue(formData, "whatsappBusinessAccountId"),
+    businessPortfolioId: formValue(formData, "businessPortfolioId"),
+    graphApiVersion: formValue(formData, "graphApiVersion"),
+    webhookVerifyToken: formValue(formData, "webhookVerifyToken"),
+    accessToken: formValue(formData, "accessToken"),
+    appSecret: formValue(formData, "appSecret"),
+    status: formValue(formData, "status")
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("integration_settings")
+    .select("id,webhook_verify_token,access_token,app_secret")
+    .eq("provider", "meta_whatsapp")
+    .maybeSingle();
+
+  if (existingError) throw new Error(existingError.message);
+
+  const payload = {
+    provider: "meta_whatsapp",
+    display_name: input.displayName,
+    status: connectionStatusMap[input.status],
+    phone_number_id: input.phoneNumberId,
+    whatsapp_business_account_id: input.whatsappBusinessAccountId,
+    business_portfolio_id: input.businessPortfolioId || null,
+    graph_api_version: input.graphApiVersion,
+    webhook_verify_token: input.webhookVerifyToken || existing?.webhook_verify_token || null,
+    access_token: input.accessToken || existing?.access_token || null,
+    app_secret: input.appSecret || existing?.app_secret || null,
+    last_test_status: "Configuration saved",
+    last_error: null,
+    updated_at: new Date().toISOString()
+  };
+
+  const { error } = existing?.id
+    ? await supabase.from("integration_settings").update(payload).eq("id", existing.id)
+    : await supabase.from("integration_settings").insert(payload);
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+}
+
+export async function saveAIProviderAction(formData: FormData) {
+  const input = aiProviderSchema.parse({
+    provider: formValue(formData, "provider"),
+    model: formValue(formData, "model"),
+    baseUrl: formValue(formData, "baseUrl"),
+    apiKey: formValue(formData, "apiKey"),
+    extractionMode: formValue(formData, "extractionMode"),
+    status: formValue(formData, "status")
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("ai_provider_settings")
+    .select("id,api_key")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) throw new Error(existingError.message);
+
+  const payload = {
+    provider: input.provider,
+    model: input.model,
+    status: connectionStatusMap[input.status],
+    base_url: input.baseUrl || null,
+    api_key: input.apiKey || existing?.api_key || null,
+    extraction_mode: input.extractionMode,
+    last_test_status: "Configuration saved",
+    last_error: null,
+    updated_at: new Date().toISOString()
+  };
+
+  const { error } = existing?.id
+    ? await supabase.from("ai_provider_settings").update(payload).eq("id", existing.id)
+    : await supabase.from("ai_provider_settings").insert(payload);
 
   if (error) throw new Error(error.message);
   revalidatePath("/");

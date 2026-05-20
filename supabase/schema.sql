@@ -294,6 +294,41 @@ create table if not exists tasks (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists integration_settings (
+  id uuid primary key default gen_random_uuid(),
+  provider text not null unique,
+  display_name text,
+  status text not null default 'draft',
+  phone_number_id text,
+  whatsapp_business_account_id text,
+  business_portfolio_id text,
+  graph_api_version text not null default 'v25.0',
+  webhook_verify_token text,
+  access_token text,
+  app_secret text,
+  last_test_status text,
+  last_error text,
+  config_json jsonb not null default '{}'::jsonb,
+  connected_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists ai_provider_settings (
+  id uuid primary key default gen_random_uuid(),
+  provider text not null default 'gemini',
+  model text not null default 'gemini-2.5-flash',
+  status text not null default 'draft',
+  base_url text,
+  api_key text,
+  extraction_mode text not null default 'structured_json',
+  last_test_status text,
+  last_error text,
+  config_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists audit_logs (
   id uuid primary key default gen_random_uuid(),
   actor_user_id uuid references users(id),
@@ -334,6 +369,14 @@ begin
 
   if to_regclass('public.tasks') is not null then
     create index if not exists idx_tasks_assigned_status on tasks(assigned_to, status);
+  end if;
+
+  if to_regclass('public.integration_settings') is not null then
+    create index if not exists idx_integration_settings_provider_status on integration_settings(provider, status);
+  end if;
+
+  if to_regclass('public.ai_provider_settings') is not null then
+    create index if not exists idx_ai_provider_settings_status on ai_provider_settings(status, created_at desc);
   end if;
 end
 $$;
