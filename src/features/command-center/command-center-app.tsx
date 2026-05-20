@@ -187,6 +187,13 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       </aside>
 
       <main className="workspace">
+        {initialData.setupError && (
+          <section className="setup-banner">
+            <strong>Supabase setup needs attention</strong>
+            <span>{initialData.setupError}</span>
+          </section>
+        )}
+
         <header className="topbar">
           <div>
             <p className="eyebrow">WhatsApp-first distribution command center</p>

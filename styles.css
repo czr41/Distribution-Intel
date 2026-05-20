@@ -116,6 +116,21 @@ button {
   margin-bottom: 24px;
 }
 
+.setup-banner {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid #f1c27d;
+  border-radius: 8px;
+  background: #fff7e6;
+  color: #5d3a00;
+}
+
+.setup-banner span {
+  color: #75500d;
+}
+
 .eyebrow {
   color: var(--green-dark);
   font-size: 13px;

@@ -5,7 +5,13 @@ import { getCommandCenterData } from "@/features/command-center/data";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const data = await getCommandCenterData();
+  const data = await getCommandCenterData().catch((error: unknown) => ({
+    records: [],
+    brands: [],
+    outlets: [],
+    salesmen: [],
+    setupError: error instanceof Error ? error.message : "Unable to load Supabase data"
+  }));
 
   return (
     <CommandCenterApp

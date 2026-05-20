@@ -1,4 +1,4 @@
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseReadClient } from "@/lib/supabase/admin";
 import type { BrandOption, CommandCenterData, CommandRecord, OutletRow, SalesmanRow } from "./types";
 
 type OutletBrandJoin = {
@@ -35,7 +35,7 @@ function displayBrandStatus(status?: string | null): "Active" | "Inactive" {
 }
 
 export async function getCommandCenterData(): Promise<CommandCenterData> {
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseReadClient();
 
   const [brandsResult, outletsResult, salesmenResult] = await Promise.all([
     supabase.from("brands").select("id,name,category,contact_person,status").order("created_at", { ascending: false }),

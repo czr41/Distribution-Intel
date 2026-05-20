@@ -47,4 +47,5 @@ export type CommandCenterData = {
   brands: BrandOption[];
   outlets: OutletRow[];
   salesmen: SalesmanRow[];
+  setupError?: string;
 };
