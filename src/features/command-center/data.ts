@@ -1,6 +1,29 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { BrandOption, CommandCenterData, CommandRecord, OutletRow, SalesmanRow } from "./types";
 
+type OutletBrandJoin = {
+  brands?: { name?: string | null } | { name?: string | null }[] | null;
+};
+
+type OutletResult = {
+  id: string;
+  name: string;
+  owner_name: string | null;
+  phone: string | null;
+  city: string;
+  channel_type: string | null;
+  status: string | null;
+  outlet_brands?: OutletBrandJoin[] | null;
+};
+
+type SalesmanResult = {
+  id: string;
+  phone: string;
+  status: string | null;
+  users?: { name?: string | null } | { name?: string | null }[] | null;
+  territories?: { name?: string | null; city?: string | null } | { name?: string | null; city?: string | null }[] | null;
+};
+
 function displayStatus(status?: string | null): "Active" | "Prospect" | "Inactive" {
   if (status === "prospect") return "Prospect";
   if (status === "inactive") return "Inactive";
@@ -38,7 +61,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     status: displayBrandStatus(brand.status)
   }));
 
-  const outlets: OutletRow[] = (outletsResult.data ?? []).map((outlet) => {
+  const outlets: OutletRow[] = ((outletsResult.data ?? []) as OutletResult[]).map((outlet) => {
     const linkedBrand = Array.isArray(outlet.outlet_brands) ? outlet.outlet_brands[0]?.brands : undefined;
     const brandName = Array.isArray(linkedBrand) ? linkedBrand[0]?.name : linkedBrand?.name;
 
@@ -54,7 +77,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     };
   });
 
-  const salesmen: SalesmanRow[] = (salesmenResult.data ?? []).map((person) => {
+  const salesmen: SalesmanRow[] = ((salesmenResult.data ?? []) as SalesmanResult[]).map((person) => {
     const user = Array.isArray(person.users) ? person.users[0] : person.users;
     const territory = Array.isArray(person.territories) ? person.territories[0] : person.territories;
 
