@@ -87,7 +87,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       phone: person.phone,
       city: territory?.city ?? "Unassigned",
       territory: territory?.name ?? "Unassigned",
-      status: displayStatus(person.status)
+      status: displayBrandStatus(person.status)
     };
   });
 
