@@ -5,6 +5,7 @@ import type { BrandOption, CommandCenterData, CommandRecord, OutletRow, Salesman
 
 type View = "command" | "inbox" | "verification" | "outlets" | "tasks" | "reports" | "partners" | "ops";
 type ModalType = "outlet" | "brand" | "salesman" | "task" | null;
+type BulkImportType = Exclude<ModalType, null>;
 type CommandCenterActions = {
   createBrand: (formData: FormData) => Promise<void>;
   createOutlet: (formData: FormData) => Promise<void>;
@@ -23,12 +24,82 @@ const viewTitles: Record<View, string> = {
   ops: "Operations Model"
 };
 
+const bulkTemplates: Record<BulkImportType, { title: string; filename: string; columns: string[]; sample: string[] }> = {
+  outlet: {
+    title: "Outlet Bulk Import",
+    filename: "fieldops-outlet-import-template.csv",
+    columns: ["name", "owner", "phone", "city", "channel", "brand", "status"],
+    sample: ["Sri Lakshmi Stores", "Ramesh Kumar", "9876543210", "Tumkur", "Kirana store", "NourishCo", "Active"]
+  },
+  brand: {
+    title: "Client Bulk Import",
+    filename: "fieldops-client-import-template.csv",
+    columns: ["name", "category", "contact", "status"],
+    sample: ["NourishCo", "Packaged foods", "Ananya Rao", "Active"]
+  },
+  salesman: {
+    title: "Salesman Bulk Import",
+    filename: "fieldops-salesman-import-template.csv",
+    columns: ["name", "phone", "city", "territory", "status"],
+    sample: ["Rahul Sharma", "9876543201", "Pune", "Pune West", "Active"]
+  },
+  task: {
+    title: "Task Bulk Import",
+    filename: "fieldops-task-import-template.csv",
+    columns: ["title", "description", "taskType", "outlet", "brand", "dueDate", "priority", "status"],
+    sample: ["Payment follow-up", "Confirm pending payment collection", "Payment follow-up", "Sri Lakshmi Stores", "NourishCo", "2026-05-22", "High", "Open"]
+  }
+};
+
 function money(value: number) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 }
 
 function confidenceLabel(record: CommandRecord) {
   return record.confidence >= 0.85 ? "High confidence" : "Needs review";
+}
+
+function csvEscape(value: string) {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function parseCsv(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let value = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const nextChar = text[index + 1];
+
+    if (char === '"' && inQuotes && nextChar === '"') {
+      value += '"';
+      index += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      row.push(value.trim());
+      value = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && nextChar === "\n") index += 1;
+      row.push(value.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      value = "";
+    } else {
+      value += char;
+    }
+  }
+
+  row.push(value.trim());
+  if (row.some(Boolean)) rows.push(row);
+
+  return rows;
+}
+
+function normalizeHeader(value: string) {
+  return value.trim().toLowerCase();
 }
 
 export function CommandCenterApp({ initialData, actions }: { initialData: CommandCenterData; actions: CommandCenterActions }) {
@@ -78,6 +149,8 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         ]
   );
   const [modalType, setModalType] = useState<ModalType>(null);
+  const [bulkImportType, setBulkImportType] = useState<BulkImportType | null>(null);
+  const [bulkImportMessage, setBulkImportMessage] = useState("");
   const [partnerFilter, setPartnerFilter] = useState("all");
   const [messageText, setMessageText] = useState("");
 
@@ -227,10 +300,168 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     setModalType(null);
   }
 
+  function downloadTemplate(type: BulkImportType) {
+    const template = bulkTemplates[type];
+    const csv = [template.columns, template.sample].map((row) => row.map(csvEscape).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = template.filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importRows(type: BulkImportType, rows: Record<string, string>[]) {
+    if (type === "outlet") {
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.outlet.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Active" : row[column] ?? ""));
+        await actions.createOutlet(form);
+      }
+      setOutlets((current) => [
+        ...rows.map((row, index) => ({
+          id: `bulk-outlet-${Date.now()}-${index}`,
+          name: row.name,
+          owner: row.owner,
+          phone: row.phone,
+          city: row.city,
+          channel: row.channel,
+          brand: row.brand,
+          status: (row.status || "Active") as OutletRow["status"]
+        })),
+        ...current
+      ]);
+      setActiveView("outlets");
+    }
+
+    if (type === "brand") {
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.brand.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Active" : row[column] ?? ""));
+        await actions.createBrand(form);
+      }
+      setBrands((current) => [
+        ...rows.map((row, index) => ({
+          id: `bulk-brand-${Date.now()}-${index}`,
+          name: row.name,
+          category: row.category,
+          contact: row.contact,
+          status: (row.status || "Active") as BrandOption["status"]
+        })),
+        ...current
+      ]);
+      setActiveView("partners");
+    }
+
+    if (type === "salesman") {
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.salesman.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Active" : row[column] ?? ""));
+        await actions.createSalesman(form);
+      }
+      setSalesmen((current) => [
+        ...rows.map((row, index) => ({
+          id: `bulk-salesman-${Date.now()}-${index}`,
+          name: row.name,
+          phone: row.phone,
+          city: row.city,
+          territory: row.territory,
+          status: (row.status || "Active") as SalesmanRow["status"]
+        })),
+        ...current
+      ]);
+      setActiveView("ops");
+    }
+
+    if (type === "task") {
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.task.columns.forEach((column) => {
+          if (column === "priority") form.set(column, row[column] || "Medium");
+          else if (column === "status") form.set(column, row[column] || "Open");
+          else form.set(column, row[column] ?? "");
+        });
+        await actions.createTask(form);
+      }
+      setTasks((current) => [
+        ...rows.map((row, index) => ({
+          id: `bulk-task-${Date.now()}-${index}`,
+          title: row.title,
+          description: row.description,
+          taskType: row.taskType,
+          outlet: row.outlet,
+          brand: row.brand,
+          dueDate: row.dueDate || "No due date",
+          priority: (row.priority || "Medium") as TaskRow["priority"],
+          status: (row.status || "Open") as TaskRow["status"]
+        })),
+        ...current
+      ]);
+      setActiveView("tasks");
+    }
+  }
+
+  async function handleBulkImport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!bulkImportType) return;
+
+    const file = (new FormData(event.currentTarget).get("file") as File | null) ?? null;
+    if (!file || file.size === 0) {
+      setBulkImportMessage("Choose a completed CSV file first.");
+      return;
+    }
+
+    const rows = parseCsv(await file.text());
+    const template = bulkTemplates[bulkImportType];
+    const [headers, ...bodyRows] = rows;
+
+    if (!headers?.length) {
+      setBulkImportMessage("The CSV is empty.");
+      return;
+    }
+
+    const normalizedHeaders = headers.map(normalizeHeader);
+    const missingColumns = template.columns.filter((column) => !normalizedHeaders.includes(normalizeHeader(column)));
+
+    if (missingColumns.length) {
+      setBulkImportMessage(`Missing columns: ${missingColumns.join(", ")}.`);
+      return;
+    }
+
+    const normalizedRows = bodyRows
+      .map((row) =>
+        template.columns.reduce<Record<string, string>>((record, column) => {
+          const index = normalizedHeaders.indexOf(normalizeHeader(column));
+          record[column] = row[index]?.trim() ?? "";
+          return record;
+        }, {})
+      )
+      .filter((row) => Object.values(row).some(Boolean));
+
+    if (!normalizedRows.length) {
+      setBulkImportMessage("No data rows found below the header.");
+      return;
+    }
+
+    try {
+      await importRows(bulkImportType, normalizedRows);
+      setBulkImportMessage(`Imported ${normalizedRows.length} ${normalizedRows.length === 1 ? "row" : "rows"}.`);
+      setBulkImportType(null);
+    } catch (error) {
+      setBulkImportMessage(error instanceof Error ? error.message : "Import failed. Check the CSV values and try again.");
+    }
+  }
+
+  function openBulkImport(type: BulkImportType) {
+    setBulkImportMessage("");
+    setBulkImportType(type);
+  }
+
   const pendingRecord = records.find((record) => record.status === "pending");
   const headerActions: Record<View, { label: string; action: () => void; disabled?: boolean }[]> = {
     command: [
       { label: "Add Outlet", action: () => setModalType("outlet") },
+      { label: "Bulk Import", action: () => openBulkImport("outlet") },
       { label: "Verify Next", action: () => pendingRecord && verifyRecord(pendingRecord.id), disabled: !pendingRecord }
     ],
     inbox: [
@@ -241,11 +472,23 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Approve Current", action: () => verifyRecord(selectedRecord.id), disabled: selectedRecord.id === "empty" },
       { label: "Ask Clarification", action: () => sendBack(selectedRecord.id), disabled: selectedRecord.id === "empty" }
     ],
-    outlets: [{ label: "Add Outlet", action: () => setModalType("outlet") }],
-    tasks: [{ label: "Create Task", action: () => setModalType("task") }],
+    outlets: [
+      { label: "Add Outlet", action: () => setModalType("outlet") },
+      { label: "Bulk Import", action: () => openBulkImport("outlet") }
+    ],
+    tasks: [
+      { label: "Create Task", action: () => setModalType("task") },
+      { label: "Bulk Import", action: () => openBulkImport("task") }
+    ],
     reports: [{ label: "Generate Report", action: () => setActiveView("reports") }],
-    partners: [{ label: "Add Client", action: () => setModalType("brand") }],
-    ops: [{ label: "Add Salesman", action: () => setModalType("salesman") }]
+    partners: [
+      { label: "Add Client", action: () => setModalType("brand") },
+      { label: "Bulk Import", action: () => openBulkImport("brand") }
+    ],
+    ops: [
+      { label: "Add Salesman", action: () => setModalType("salesman") },
+      { label: "Bulk Import", action: () => openBulkImport("salesman") }
+    ]
   };
 
   return (
@@ -340,16 +583,28 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           </section>
         )}
 
-        {activeView === "outlets" && <OutletsView outlets={outlets} onAdd={() => setModalType("outlet")} />}
+        {activeView === "outlets" && <OutletsView outlets={outlets} onAdd={() => setModalType("outlet")} onBulkImport={() => openBulkImport("outlet")} />}
         {activeView === "partners" && (
-          <PartnersView brands={brands} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => setModalType("brand")} />
+          <PartnersView brands={brands} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => setModalType("brand")} onBulkImport={() => openBulkImport("brand")} />
         )}
-        {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => setModalType("salesman")} />}
-        {activeView === "tasks" && <TasksView tasks={tasks} onAdd={() => setModalType("task")} />}
+        {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => setModalType("salesman")} onBulkImport={() => openBulkImport("salesman")} />}
+        {activeView === "tasks" && <TasksView tasks={tasks} onAdd={() => setModalType("task")} onBulkImport={() => openBulkImport("task")} />}
         {activeView === "reports" && <ReportsView />}
       </main>
 
       {modalType && <MasterDataModal type={modalType} brands={brands} onClose={() => setModalType(null)} onSubmit={addMasterData} />}
+      {bulkImportType && (
+        <BulkImportModal
+          type={bulkImportType}
+          message={bulkImportMessage}
+          onClose={() => {
+            setBulkImportType(null);
+            setBulkImportMessage("");
+          }}
+          onDownload={() => downloadTemplate(bulkImportType)}
+          onSubmit={handleBulkImport}
+        />
+      )}
     </div>
   );
 }
@@ -452,7 +707,7 @@ function AIDraft({ record }: { record: CommandRecord }) {
   );
 }
 
-function OutletsView({ outlets, onAdd }: { outlets: OutletRow[]; onAdd: () => void }) {
+function OutletsView({ outlets, onAdd, onBulkImport }: { outlets: OutletRow[]; onAdd: () => void; onBulkImport: () => void }) {
   return (
     <section className="table-layout">
       <div className="panel">
@@ -461,9 +716,14 @@ function OutletsView({ outlets, onAdd }: { outlets: OutletRow[]; onAdd: () => vo
             <h2>Outlet Master</h2>
             <p>Verified retailer database with visit, payment, and intelligence context.</p>
           </div>
-          <button className="primary-button" onClick={onAdd}>
-            Add Outlet
-          </button>
+          <div className="panel-actions">
+            <button className="secondary-button" onClick={onBulkImport}>
+              Bulk Import
+            </button>
+            <button className="primary-button" onClick={onAdd}>
+              Add Outlet
+            </button>
+          </div>
         </div>
         <div className="data-table">
           <div className="table-row header">
@@ -493,13 +753,15 @@ function PartnersView({
   records,
   partnerFilter,
   onFilter,
-  onAdd
+  onAdd,
+  onBulkImport
 }: {
   brands: BrandOption[];
   records: CommandRecord[];
   partnerFilter: string;
   onFilter: (value: string) => void;
   onAdd: () => void;
+  onBulkImport: () => void;
 }) {
   return (
     <>
@@ -517,6 +779,9 @@ function PartnersView({
               </option>
             ))}
           </select>
+          <button className="secondary-button" onClick={onBulkImport}>
+            Bulk Import
+          </button>
           <button className="primary-button" onClick={onAdd}>
             Add Client
           </button>
@@ -547,7 +812,7 @@ function PartnersView({
   );
 }
 
-function OpsView({ salesmen, onAdd }: { salesmen: SalesmanRow[]; onAdd: () => void }) {
+function OpsView({ salesmen, onAdd, onBulkImport }: { salesmen: SalesmanRow[]; onAdd: () => void; onBulkImport: () => void }) {
   return (
     <section className="ops-grid">
       <article className="panel">
@@ -556,9 +821,14 @@ function OpsView({ salesmen, onAdd }: { salesmen: SalesmanRow[]; onAdd: () => vo
             <h2>Field Team</h2>
             <p>Sales executives mapped to territories and WhatsApp numbers.</p>
           </div>
-          <button className="primary-button" onClick={onAdd}>
-            Add Salesman
-          </button>
+          <div className="panel-actions">
+            <button className="secondary-button" onClick={onBulkImport}>
+              Bulk Import
+            </button>
+            <button className="primary-button" onClick={onAdd}>
+              Add Salesman
+            </button>
+          </div>
         </div>
         <div className="data-table">
           {salesmen.map((person) => (
@@ -584,7 +854,7 @@ function OpsView({ salesmen, onAdd }: { salesmen: SalesmanRow[]; onAdd: () => vo
   );
 }
 
-function TasksView({ tasks, onAdd }: { tasks: TaskRow[]; onAdd: () => void }) {
+function TasksView({ tasks, onAdd, onBulkImport }: { tasks: TaskRow[]; onAdd: () => void; onBulkImport: () => void }) {
   return (
     <section className="ops-grid">
       <article className="panel">
@@ -593,9 +863,14 @@ function TasksView({ tasks, onAdd }: { tasks: TaskRow[]; onAdd: () => void }) {
             <h2>Tasks & Follow-Ups</h2>
             <p>Manual and AI-created follow-ups for payments, orders, complaints, and field action.</p>
           </div>
-          <button className="primary-button" onClick={onAdd}>
-            Create Task
-          </button>
+          <div className="panel-actions">
+            <button className="secondary-button" onClick={onBulkImport}>
+              Bulk Import
+            </button>
+            <button className="primary-button" onClick={onAdd}>
+              Create Task
+            </button>
+          </div>
         </div>
         <div className="task-list">
           {tasks.map((task) => (
@@ -652,6 +927,60 @@ function ReportsView() {
         </div>
       </article>
     </section>
+  );
+}
+
+function BulkImportModal({
+  type,
+  message,
+  onClose,
+  onDownload,
+  onSubmit
+}: {
+  type: BulkImportType;
+  message: string;
+  onClose: () => void;
+  onDownload: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const template = bulkTemplates[type];
+
+  return (
+    <div className="modal-backdrop">
+      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="bulk-import-title">
+        <div className="modal-header">
+          <div>
+            <p className="eyebrow">Bulk import</p>
+            <h2 id="bulk-import-title">{template.title}</h2>
+          </div>
+          <button className="icon-button" onClick={onClose} title="Close">x</button>
+        </div>
+        <div className="import-guidance">
+          <p>Download the template, fill one row per record, keep the column names unchanged, then upload the completed CSV.</p>
+          <div className="template-columns">
+            {template.columns.map((column) => (
+              <span className="tag" key={column}>{column}</span>
+            ))}
+          </div>
+        </div>
+        <form className="master-form" onSubmit={onSubmit}>
+          <div className="action-row">
+            <button className="secondary-button" type="button" onClick={onDownload}>
+              Download Template
+            </button>
+          </div>
+          <div className="form-field">
+            <label htmlFor="bulk-file">Completed CSV file</label>
+            <input id="bulk-file" name="file" type="file" accept=".csv,text/csv" required />
+          </div>
+          {message && <p className="form-error">{message}</p>}
+          <div className="action-row">
+            <button className="approve" type="submit">Import Rows</button>
+            <button className="reject" type="button" onClick={onClose}>Cancel</button>
+          </div>
+        </form>
+      </section>
+    </div>
   );
 }
 
