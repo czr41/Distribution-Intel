@@ -7,6 +7,10 @@ function displayStatus(status?: string | null): "Active" | "Prospect" | "Inactiv
   return "Active";
 }
 
+function displayBrandStatus(status?: string | null): "Active" | "Inactive" {
+  return status === "inactive" ? "Inactive" : "Active";
+}
+
 export async function getCommandCenterData(): Promise<CommandCenterData> {
   const supabase = createSupabaseAdminClient();
 
@@ -31,7 +35,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     name: brand.name,
     category: brand.category ?? "Uncategorized",
     contact: brand.contact_person ?? "Internal ops",
-    status: displayStatus(brand.status)
+    status: displayBrandStatus(brand.status)
   }));
 
   const outlets: OutletRow[] = (outletsResult.data ?? []).map((outlet) => {
