@@ -35,6 +35,33 @@ const salesmanSchema = z.object({
   status: z.enum(["Active", "Inactive"])
 });
 
+const taskStatusMap = {
+  Open: "open",
+  "In progress": "in_progress",
+  "Waiting for response": "waiting_for_response",
+  Completed: "completed",
+  Cancelled: "cancelled",
+  Overdue: "overdue"
+} as const;
+
+const taskPriorityMap = {
+  Low: "low",
+  Medium: "medium",
+  High: "high",
+  Critical: "critical"
+} as const;
+
+const taskSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().min(1),
+  taskType: z.string().min(1),
+  outlet: z.string().min(1),
+  brand: z.string().min(1),
+  dueDate: z.string().optional(),
+  priority: z.enum(["Low", "Medium", "High", "Critical"]),
+  status: z.enum(["Open", "In progress", "Waiting for response", "Completed", "Cancelled", "Overdue"])
+});
+
 function formValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
@@ -151,5 +178,41 @@ export async function createSalesmanAction(formData: FormData) {
   });
 
   if (executiveError) throw new Error(executiveError.message);
+  revalidatePath("/");
+}
+
+export async function createTaskAction(formData: FormData) {
+  const input = taskSchema.parse({
+    title: formValue(formData, "title"),
+    description: formValue(formData, "description"),
+    taskType: formValue(formData, "taskType"),
+    outlet: formValue(formData, "outlet"),
+    brand: formValue(formData, "brand"),
+    dueDate: formValue(formData, "dueDate"),
+    priority: formValue(formData, "priority"),
+    status: formValue(formData, "status")
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const [brandResult, outletResult] = await Promise.all([
+    supabase.from("brands").select("id").eq("name", input.brand).maybeSingle(),
+    supabase.from("outlets").select("id").eq("name", input.outlet).maybeSingle()
+  ]);
+
+  if (brandResult.error) throw new Error(brandResult.error.message);
+  if (outletResult.error) throw new Error(outletResult.error.message);
+
+  const { error } = await supabase.from("tasks").insert({
+    title: input.title,
+    description: input.description,
+    task_type: input.taskType,
+    outlet_id: outletResult.data?.id,
+    brand_id: brandResult.data?.id,
+    due_date: input.dueDate || null,
+    priority: taskPriorityMap[input.priority],
+    status: taskStatusMap[input.status]
+  });
+
+  if (error) throw new Error(error.message);
   revalidatePath("/");
 }

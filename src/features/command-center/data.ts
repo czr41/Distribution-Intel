@@ -1,5 +1,5 @@
 import { createSupabaseReadClient } from "@/lib/supabase/admin";
-import type { BrandOption, CommandCenterData, CommandRecord, OutletRow, SalesmanRow } from "./types";
+import type { BrandOption, CommandCenterData, CommandRecord, OutletRow, SalesmanRow, TaskRow } from "./types";
 
 type OutletBrandJoin = {
   brands?: { name?: string | null } | { name?: string | null }[] | null;
@@ -24,6 +24,18 @@ type SalesmanResult = {
   territories?: { name?: string | null; city?: string | null } | { name?: string | null; city?: string | null }[] | null;
 };
 
+type TaskResult = {
+  id: string;
+  title: string;
+  description: string | null;
+  task_type: string;
+  due_date: string | null;
+  priority: string | null;
+  status: string | null;
+  outlets?: { name?: string | null } | { name?: string | null }[] | null;
+  brands?: { name?: string | null } | { name?: string | null }[] | null;
+};
+
 function displayStatus(status?: string | null): "Active" | "Prospect" | "Inactive" {
   if (status === "prospect") return "Prospect";
   if (status === "inactive") return "Inactive";
@@ -34,10 +46,26 @@ function displayBrandStatus(status?: string | null): "Active" | "Inactive" {
   return status === "inactive" ? "Inactive" : "Active";
 }
 
+function displayTaskStatus(status?: string | null): TaskRow["status"] {
+  if (status === "in_progress") return "In progress";
+  if (status === "waiting_for_response") return "Waiting for response";
+  if (status === "completed") return "Completed";
+  if (status === "cancelled") return "Cancelled";
+  if (status === "overdue") return "Overdue";
+  return "Open";
+}
+
+function displayTaskPriority(priority?: string | null): TaskRow["priority"] {
+  if (priority === "low") return "Low";
+  if (priority === "high") return "High";
+  if (priority === "critical") return "Critical";
+  return "Medium";
+}
+
 export async function getCommandCenterData(): Promise<CommandCenterData> {
   const supabase = createSupabaseReadClient();
 
-  const [brandsResult, outletsResult, salesmenResult] = await Promise.all([
+  const [brandsResult, outletsResult, salesmenResult, tasksResult] = await Promise.all([
     supabase.from("brands").select("id,name,category,contact_person,status").order("created_at", { ascending: false }),
     supabase
       .from("outlets")
@@ -46,12 +74,17 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     supabase
       .from("field_executives")
       .select("id,phone,status,users!field_executives_user_id_fkey(name),territories(name,city)")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("tasks")
+      .select("id,title,description,task_type,due_date,priority,status,outlets(name),brands(name)")
       .order("created_at", { ascending: false })
   ]);
 
   if (brandsResult.error) throw new Error(brandsResult.error.message);
   if (outletsResult.error) throw new Error(outletsResult.error.message);
   if (salesmenResult.error) throw new Error(salesmenResult.error.message);
+  if (tasksResult.error) throw new Error(tasksResult.error.message);
 
   const brands: BrandOption[] = (brandsResult.data ?? []).map((brand) => ({
     id: brand.id,
@@ -107,5 +140,22 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     createdAt: "10:12"
   }));
 
-  return { records, brands, outlets, salesmen };
+  const tasks: TaskRow[] = ((tasksResult.data ?? []) as TaskResult[]).map((task) => {
+    const outlet = Array.isArray(task.outlets) ? task.outlets[0] : task.outlets;
+    const brand = Array.isArray(task.brands) ? task.brands[0] : task.brands;
+
+    return {
+      id: task.id,
+      title: task.title,
+      description: task.description ?? "Created from verified field signal.",
+      taskType: task.task_type,
+      outlet: outlet?.name ?? "Unassigned",
+      brand: brand?.name ?? "Unassigned",
+      dueDate: task.due_date ?? "No due date",
+      priority: displayTaskPriority(task.priority),
+      status: displayTaskStatus(task.status)
+    };
+  });
+
+  return { records, brands, outlets, salesmen, tasks };
 }

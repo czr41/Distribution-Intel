@@ -1,14 +1,15 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import type { BrandOption, CommandCenterData, CommandRecord, OutletRow, SalesmanRow } from "./types";
+import type { BrandOption, CommandCenterData, CommandRecord, OutletRow, SalesmanRow, TaskRow } from "./types";
 
 type View = "command" | "inbox" | "verification" | "outlets" | "tasks" | "reports" | "partners" | "ops";
-type ModalType = "outlet" | "brand" | "salesman" | null;
+type ModalType = "outlet" | "brand" | "salesman" | "task" | null;
 type CommandCenterActions = {
   createBrand: (formData: FormData) => Promise<void>;
   createOutlet: (formData: FormData) => Promise<void>;
   createSalesman: (formData: FormData) => Promise<void>;
+  createTask: (formData: FormData) => Promise<void>;
 };
 
 const viewTitles: Record<View, string> = {
@@ -37,6 +38,45 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const [brands, setBrands] = useState<BrandOption[]>(initialData.brands);
   const [outlets, setOutlets] = useState<OutletRow[]>(initialData.outlets);
   const [salesmen, setSalesmen] = useState<SalesmanRow[]>(initialData.salesmen);
+  const [tasks, setTasks] = useState<TaskRow[]>(
+    initialData.tasks.length
+      ? initialData.tasks
+      : [
+          {
+            id: "demo-task-payment",
+            title: "Payment follow-up",
+            description: "Call retailer and confirm pending collection window.",
+            taskType: "Payment follow-up",
+            outlet: "Raj Stores",
+            brand: brands[0]?.name ?? "Unassigned",
+            dueDate: "Today",
+            priority: "High",
+            status: "Open"
+          },
+          {
+            id: "demo-task-order",
+            title: "Order confirmation",
+            description: "Confirm next order quantity after verification.",
+            taskType: "Order confirmation",
+            outlet: "Fresh Basket",
+            brand: brands[1]?.name ?? brands[0]?.name ?? "Unassigned",
+            dueDate: "Tomorrow",
+            priority: "Medium",
+            status: "Open"
+          },
+          {
+            id: "demo-task-display",
+            title: "Display material request",
+            description: "Share display material requirement with operations.",
+            taskType: "Display material request",
+            outlet: "Unassigned",
+            brand: brands[0]?.name ?? "Unassigned",
+            dueDate: "This week",
+            priority: "Low",
+            status: "Waiting for response"
+          }
+        ]
+  );
   const [modalType, setModalType] = useState<ModalType>(null);
   const [partnerFilter, setPartnerFilter] = useState("all");
   const [messageText, setMessageText] = useState("");
@@ -165,8 +205,48 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       setActiveView("ops");
     }
 
+    if (modalType === "task") {
+      await actions.createTask(form);
+      setTasks((current) => [
+        {
+          id: `task-${Date.now()}`,
+          title: value("title"),
+          description: value("description"),
+          taskType: value("taskType"),
+          outlet: value("outlet"),
+          brand: value("brand"),
+          dueDate: value("dueDate") || "No due date",
+          priority: value("priority") as TaskRow["priority"],
+          status: value("status") as TaskRow["status"]
+        },
+        ...current
+      ]);
+      setActiveView("tasks");
+    }
+
     setModalType(null);
   }
+
+  const pendingRecord = records.find((record) => record.status === "pending");
+  const headerActions: Record<View, { label: string; action: () => void; disabled?: boolean }[]> = {
+    command: [
+      { label: "Add Outlet", action: () => setModalType("outlet") },
+      { label: "Verify Next", action: () => pendingRecord && verifyRecord(pendingRecord.id), disabled: !pendingRecord }
+    ],
+    inbox: [
+      { label: "Log Field Message", action: () => setActiveView("inbox") },
+      { label: "Verify Next", action: () => pendingRecord && verifyRecord(pendingRecord.id), disabled: !pendingRecord }
+    ],
+    verification: [
+      { label: "Approve Current", action: () => verifyRecord(selectedRecord.id), disabled: selectedRecord.id === "empty" },
+      { label: "Ask Clarification", action: () => sendBack(selectedRecord.id), disabled: selectedRecord.id === "empty" }
+    ],
+    outlets: [{ label: "Add Outlet", action: () => setModalType("outlet") }],
+    tasks: [{ label: "Create Task", action: () => setModalType("task") }],
+    reports: [{ label: "Generate Report", action: () => setActiveView("reports") }],
+    partners: [{ label: "Add Client", action: () => setModalType("brand") }],
+    ops: [{ label: "Add Salesman", action: () => setModalType("salesman") }]
+  };
 
   return (
     <div className="app-shell">
@@ -201,12 +281,11 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
             <h1>{viewTitles[activeView]}</h1>
           </div>
           <div className="topbar-actions">
-            <button className="primary-button" onClick={() => setModalType("outlet")}>
-              Add Master Data
-            </button>
-            <button className="primary-button" onClick={() => records.find((record) => record.status === "pending") && verifyRecord(records.find((record) => record.status === "pending")!.id)}>
-              Verify Next
-            </button>
+            {headerActions[activeView].map((headerAction) => (
+              <button key={headerAction.label} className="primary-button" onClick={headerAction.action} disabled={headerAction.disabled}>
+                {headerAction.label}
+              </button>
+            ))}
           </div>
         </header>
 
@@ -266,7 +345,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           <PartnersView brands={brands} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => setModalType("brand")} />
         )}
         {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => setModalType("salesman")} />}
-        {activeView === "tasks" && <TasksView />}
+        {activeView === "tasks" && <TasksView tasks={tasks} onAdd={() => setModalType("task")} />}
         {activeView === "reports" && <ReportsView />}
       </main>
 
@@ -505,19 +584,33 @@ function OpsView({ salesmen, onAdd }: { salesmen: SalesmanRow[]; onAdd: () => vo
   );
 }
 
-function TasksView() {
+function TasksView({ tasks, onAdd }: { tasks: TaskRow[]; onAdd: () => void }) {
   return (
     <section className="ops-grid">
       <article className="panel">
-        <h2>Tasks & Follow-Ups</h2>
+        <div className="panel-heading">
+          <div>
+            <h2>Tasks & Follow-Ups</h2>
+            <p>Manual and AI-created follow-ups for payments, orders, complaints, and field action.</p>
+          </div>
+          <button className="primary-button" onClick={onAdd}>
+            Create Task
+          </button>
+        </div>
         <div className="task-list">
-          {["Payment follow-up", "Order confirmation", "Display material request"].map((task) => (
-            <article className="task-row" key={task}>
+          {tasks.map((task) => (
+            <article className="task-row" key={task.id}>
               <div className="queue-top">
-                <strong>{task}</strong>
-                <span className="tag blue">Open</span>
+                <strong>{task.title}</strong>
+                <span className={`tag ${task.priority === "High" || task.priority === "Critical" ? "warn" : "blue"}`}>{task.priority}</span>
               </div>
-              <p>Created from verified field signal.</p>
+              <p>{task.description}</p>
+              <div className="record-meta">
+                <span>{task.outlet}</span>
+                <span>{task.brand}</span>
+                <span>{task.dueDate}</span>
+                <span className="tag blue">{task.status}</span>
+              </div>
             </article>
           ))}
         </div>
@@ -563,7 +656,8 @@ function ReportsView() {
 }
 
 function MasterDataModal({ type, brands, onClose, onSubmit }: { type: Exclude<ModalType, null>; brands: BrandOption[]; onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
-  const title = type === "outlet" ? "Add Outlet" : type === "brand" ? "Add Brand Client" : "Add Salesman";
+  const title = type === "outlet" ? "Add Outlet" : type === "brand" ? "Add Brand Client" : type === "salesman" ? "Add Salesman" : "Create Task";
+  const brandOptions = brands.length ? brands.map((brand) => brand.name) : ["Unassigned"];
   return (
     <div className="modal-backdrop">
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
@@ -604,6 +698,18 @@ function MasterDataModal({ type, brands, onClose, onSubmit }: { type: Exclude<Mo
                 <Select name="status" label="Status" options={["Active", "Inactive"]} />
               </>
             )}
+            {type === "task" && (
+              <>
+                <Input name="title" label="Task title" />
+                <Select name="taskType" label="Task type" options={["Payment follow-up", "Order confirmation", "Delivery follow-up", "Complaint resolution", "Stock refill", "Display material request", "New outlet onboarding", "Manager escalation"]} />
+                <Input name="description" label="Description" />
+                <Input name="outlet" label="Outlet" />
+                <Select name="brand" label="Brand client" options={brandOptions} />
+                <Input name="dueDate" label="Due date" type="date" required={false} />
+                <Select name="priority" label="Priority" options={["Low", "Medium", "High", "Critical"]} />
+                <Select name="status" label="Status" options={["Open", "In progress", "Waiting for response", "Completed", "Cancelled", "Overdue"]} />
+              </>
+            )}
           </div>
           <div className="action-row">
             <button className="approve" type="submit">Save</button>
@@ -615,11 +721,11 @@ function MasterDataModal({ type, brands, onClose, onSubmit }: { type: Exclude<Mo
   );
 }
 
-function Input({ name, label }: { name: string; label: string }) {
+function Input({ name, label, required = true, type = "text" }: { name: string; label: string; required?: boolean; type?: string }) {
   return (
     <div className="form-field">
       <label htmlFor={name}>{label}</label>
-      <input id={name} name={name} required />
+      <input id={name} name={name} type={type} required={required} />
     </div>
   );
 }

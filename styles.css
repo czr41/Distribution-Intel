@@ -204,6 +204,11 @@ h2 {
   color: #fff;
 }
 
+.primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .action-row .reject {
   background: #fff1f1;
   color: var(--red);

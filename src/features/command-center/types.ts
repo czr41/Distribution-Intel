@@ -42,10 +42,23 @@ export type SalesmanRow = {
   status: "Active" | "Inactive";
 };
 
+export type TaskRow = {
+  id: string;
+  title: string;
+  description: string;
+  taskType: string;
+  outlet: string;
+  brand: string;
+  dueDate: string;
+  priority: "Low" | "Medium" | "High" | "Critical";
+  status: "Open" | "In progress" | "Waiting for response" | "Completed" | "Cancelled" | "Overdue";
+};
+
 export type CommandCenterData = {
   records: CommandRecord[];
   brands: BrandOption[];
   outlets: OutletRow[];
   salesmen: SalesmanRow[];
+  tasks: TaskRow[];
   setupError?: string;
 };

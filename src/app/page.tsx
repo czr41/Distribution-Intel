@@ -1,5 +1,5 @@
 import { CommandCenterApp } from "@/features/command-center/command-center-app";
-import { createBrandAction, createOutletAction, createSalesmanAction } from "@/features/command-center/actions";
+import { createBrandAction, createOutletAction, createSalesmanAction, createTaskAction } from "@/features/command-center/actions";
 import { getCommandCenterData } from "@/features/command-center/data";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +10,7 @@ export default async function Home() {
     brands: [],
     outlets: [],
     salesmen: [],
+    tasks: [],
     setupError: error instanceof Error ? error.message : "Unable to load Supabase data"
   }));
 
@@ -19,7 +20,8 @@ export default async function Home() {
       actions={{
         createBrand: createBrandAction,
         createOutlet: createOutletAction,
-        createSalesman: createSalesmanAction
+        createSalesman: createSalesmanAction,
+        createTask: createTaskAction
       }}
     />
   );
