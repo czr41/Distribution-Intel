@@ -544,7 +544,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     <div className="app-shell">
       <aside className="sidebar" aria-label="Primary">
         <div className="brand">
-          <img src="/brand/shipd2r-logo.svg" alt="shipd2r" />
+          <img src="/brand/shipd2r-logo.png" alt="shipd2r" />
           <span>Direct-to-retailer command center</span>
         </div>
         <nav className="nav-tabs" aria-label="Views">
