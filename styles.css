@@ -29,6 +29,10 @@ body {
     radial-gradient(circle at 86% -10%, rgba(6, 182, 200, 0.12), transparent 28%),
     linear-gradient(180deg, #f9fbfb 0%, var(--bg) 44%, #eef3f4 100%);
   color: var(--ink);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
 }
 
 button,
@@ -44,7 +48,7 @@ button {
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 270px 1fr;
+  grid-template-columns: 252px 1fr;
 }
 
 .sidebar {
@@ -52,22 +56,22 @@ button {
     linear-gradient(180deg, #fbfeff 0%, var(--nav) 48%, #edf8fb 100%),
     var(--nav);
   color: var(--ink);
-  padding: 28px 18px;
+  padding: 26px 16px;
   display: flex;
   flex-direction: column;
-  gap: 34px;
+  gap: 30px;
   border-right: 1px solid rgba(6, 182, 200, 0.14);
   box-shadow: 14px 0 36px rgba(24, 33, 40, 0.05);
 }
 
 .brand {
   display: grid;
-  gap: 8px;
-  padding: 4px 8px 0;
+  gap: 10px;
+  padding: 6px 10px 0;
 }
 
 .brand img {
-  width: 188px;
+  width: 152px;
   height: auto;
   display: block;
   filter: drop-shadow(0 8px 18px rgba(24, 33, 40, 0.08));
@@ -75,23 +79,27 @@ button {
 
 .brand span {
   color: #52717b;
-  font-size: 12px;
-  font-weight: 700;
+  max-width: 168px;
+  font-size: 10px;
+  font-weight: 650;
   letter-spacing: 0;
+  line-height: 1.35;
   text-transform: uppercase;
 }
 
 .nav-tabs {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .nav-tab {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #48626a;
-  padding: 12px 14px;
+  color: #536d75;
+  padding: 10px 13px;
+  font-size: 14px;
+  font-weight: 560;
   text-align: left;
   transition: background 160ms ease, color 160ms ease, transform 160ms ease;
 }
@@ -100,11 +108,11 @@ button {
 .nav-tab:hover {
   background: var(--nav-soft);
   color: var(--ink);
-  box-shadow: inset 3px 0 0 var(--cyan);
+  box-shadow: inset 2px 0 0 var(--cyan);
 }
 
 .workspace {
-  padding: 34px 36px;
+  padding: 32px 36px;
   overflow: auto;
 }
 
@@ -118,8 +126,8 @@ button {
 }
 
 .topbar {
-  margin-bottom: 26px;
-  padding-bottom: 20px;
+  margin-bottom: 24px;
+  padding-bottom: 18px;
   border-bottom: 1px solid rgba(24, 33, 40, 0.08);
 }
 
@@ -140,8 +148,8 @@ button {
 
 .eyebrow {
   color: var(--cyan-dark);
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 760;
   letter-spacing: 0;
   margin: 0 0 6px;
   text-transform: uppercase;
@@ -155,13 +163,15 @@ p {
 
 h1 {
   margin-bottom: 0;
-  font-size: 36px;
-  line-height: 1.1;
+  font-size: 34px;
+  font-weight: 780;
+  line-height: 1.08;
   letter-spacing: 0;
 }
 
 h2 {
-  font-size: 18px;
+  font-size: 17px;
+  font-weight: 720;
   margin-bottom: 7px;
   letter-spacing: 0;
 }
@@ -196,9 +206,10 @@ h2 {
 .action-row button {
   border: 0;
   border-radius: 8px;
-  min-height: 42px;
-  padding: 0 17px;
-  font-weight: 700;
+  min-height: 38px;
+  padding: 0 15px;
+  font-size: 14px;
+  font-weight: 680;
   transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
@@ -215,7 +226,7 @@ h2 {
 .action-row .approve {
   background: var(--cyan);
   color: #fff;
-  box-shadow: 0 10px 22px rgba(6, 182, 200, 0.2);
+  box-shadow: 0 9px 20px rgba(6, 182, 200, 0.18);
 }
 
 .secondary-button {
@@ -252,7 +263,7 @@ h2 {
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 14px;
   margin-bottom: 16px;
 }
 
@@ -263,11 +274,11 @@ h2 {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
-  box-shadow: var(--shadow);
+  box-shadow: 0 14px 38px rgba(24, 33, 40, 0.07);
 }
 
 .metric-card {
-  padding: 20px;
+  padding: 18px 20px;
   position: relative;
   overflow: hidden;
 }
@@ -282,8 +293,9 @@ h2 {
 
 .metric-card strong {
   display: block;
-  font-size: 34px;
-  margin: 8px 0 4px;
+  font-size: 32px;
+  font-weight: 760;
+  margin: 7px 0 4px;
   letter-spacing: 0;
 }
 
@@ -294,7 +306,7 @@ h2 {
 .integrations-grid {
   display: grid;
   grid-template-columns: minmax(360px, 1.15fr) minmax(320px, 0.85fr);
-  gap: 16px;
+  gap: 14px;
 }
 
 .inbox-grid {
@@ -314,7 +326,7 @@ select,
 input {
   border: 1px solid var(--line);
   background: var(--surface);
-  min-height: 42px;
+  min-height: 40px;
   border-radius: 8px;
   padding: 0 12px;
   color: var(--ink);
@@ -332,8 +344,8 @@ input:focus {
 .task-list,
 .data-table {
   display: grid;
-  gap: 10px;
-  margin-top: 16px;
+  gap: 9px;
+  margin-top: 15px;
   max-height: 520px;
   overflow: auto;
 }
@@ -344,8 +356,18 @@ input:focus {
 .table-row {
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 15px;
+  padding: 14px;
   background: var(--surface-soft);
+}
+
+.queue-item p,
+.task-row p,
+.evidence-card p,
+.record-detail p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+  margin-bottom: 0;
 }
 
 .queue-item.active {
@@ -369,9 +391,9 @@ input:focus {
 
 .tag {
   border-radius: 999px;
-  padding: 4px 9px;
-  font-size: 12px;
-  font-weight: 700;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 680;
   background: var(--surface-strong);
   color: var(--cyan-dark);
 }
@@ -407,7 +429,7 @@ input:focus {
 .field span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   margin-bottom: 4px;
 }
 
@@ -472,8 +494,8 @@ input:focus {
 .table-row.header {
   background: #edf4f6;
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 760;
   text-transform: uppercase;
 }
 
@@ -490,7 +512,7 @@ input:focus {
 .phone-header {
   color: #fff;
   padding: 10px 12px 16px;
-  font-weight: 800;
+  font-weight: 720;
 }
 
 .chat-feed {
@@ -510,6 +532,7 @@ input:focus {
   background: #ffffff;
   align-self: flex-start;
   line-height: 1.35;
+  font-size: 14px;
 }
 
 .message.outbound {
@@ -582,6 +605,7 @@ input:focus {
 .module-card h3 {
   margin: 0 0 4px;
   font-size: 15px;
+  font-weight: 720;
 }
 
 .module-card p {
