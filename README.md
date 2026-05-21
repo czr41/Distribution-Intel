@@ -1,4 +1,4 @@
-# FieldOps Command Center
+# shipd2r Command Center
 
 This is the first executable MVP slice for the build brief:
 

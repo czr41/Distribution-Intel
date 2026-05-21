@@ -7,6 +7,8 @@ export interface NormalizedIncomingMessage {
   messageType: IncomingMessage["messageType"];
   textBody?: string;
   mediaUrl?: string;
+  mediaMimeType?: string;
+  mediaFilename?: string;
   latitude?: number;
   longitude?: number;
   rawPayloadJson: unknown;

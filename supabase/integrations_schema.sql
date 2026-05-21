@@ -36,6 +36,37 @@ create table if not exists ai_provider_settings (
 create index if not exists idx_integration_settings_provider_status on integration_settings(provider, status);
 create index if not exists idx_ai_provider_settings_status on ai_provider_settings(status, created_at desc);
 
+insert into storage.buckets (
+  id,
+  name,
+  public,
+  file_size_limit,
+  allowed_mime_types
+)
+values (
+  'whatsapp-media',
+  'whatsapp-media',
+  false,
+  52428800,
+  array[
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'application/pdf',
+    'audio/aac',
+    'audio/amr',
+    'audio/mpeg',
+    'audio/mp4',
+    'audio/ogg',
+    'video/mp4',
+    'video/3gpp'
+  ]
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
 insert into integration_settings (
   provider,
   display_name,

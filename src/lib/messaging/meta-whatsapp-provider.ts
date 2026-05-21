@@ -8,6 +8,22 @@ type MetaWhatsAppConfig = {
   graphApiVersion: string;
 };
 
+type MetaMediaResponse = {
+  url?: string;
+  mime_type?: string;
+  sha256?: string;
+  file_size?: number;
+  id?: string;
+};
+
+export type DownloadedMetaMedia = {
+  mediaId: string;
+  bytes: ArrayBuffer;
+  mimeType: string;
+  sha256?: string;
+  fileSize?: number;
+};
+
 type MetaWebhookMessage = {
   id?: string;
   from?: string;
@@ -44,6 +60,18 @@ function mediaIdFor(message: MetaWebhookMessage) {
   return message.image?.id ?? message.audio?.id ?? message.document?.id ?? message.video?.id;
 }
 
+function mediaMimeTypeFor(message: MetaWebhookMessage) {
+  return message.image?.mime_type ?? message.audio?.mime_type ?? message.document?.mime_type ?? message.video?.mime_type;
+}
+
+function mediaFilenameFor(message: MetaWebhookMessage) {
+  return message.document?.filename;
+}
+
+export function parseMetaMediaId(mediaUrl?: string) {
+  return mediaUrl?.startsWith("meta-media:") ? mediaUrl.replace("meta-media:", "") : undefined;
+}
+
 export function verifyMetaSignature(rawBody: string, signatureHeader: string | null, appSecret: string) {
   if (!signatureHeader || !signatureHeader.startsWith("sha256=") || !appSecret) return false;
 
@@ -73,6 +101,8 @@ export function parseMetaWebhookMessages(payload: unknown): NormalizedIncomingMe
           messageType,
           textBody: message.text?.body ?? message.image?.caption ?? message.document?.caption ?? message.video?.caption,
           mediaUrl: mediaId ? `meta-media:${mediaId}` : undefined,
+          mediaMimeType: mediaMimeTypeFor(message),
+          mediaFilename: mediaFilenameFor(message),
           latitude: message.location?.latitude,
           longitude: message.location?.longitude,
           rawPayloadJson: message
@@ -117,5 +147,41 @@ export class MetaWhatsAppProvider implements MessagingProvider {
     if (!response.ok) {
       throw new Error(`Meta send failed: ${response.status} ${await response.text()}`);
     }
+  }
+
+  async downloadMedia(mediaId: string): Promise<DownloadedMetaMedia> {
+    const mediaResponse = await fetch(
+      `https://graph.facebook.com/${this.config.graphApiVersion}/${mediaId}?phone_number_id=${this.config.phoneNumberId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.config.accessToken}`
+        }
+      }
+    );
+
+    if (!mediaResponse.ok) {
+      throw new Error(`Meta media URL lookup failed: ${mediaResponse.status} ${await mediaResponse.text()}`);
+    }
+
+    const media = (await mediaResponse.json()) as MetaMediaResponse;
+    if (!media.url) throw new Error("Meta media lookup did not return a download URL");
+
+    const downloadResponse = await fetch(media.url, {
+      headers: {
+        Authorization: `Bearer ${this.config.accessToken}`
+      }
+    });
+
+    if (!downloadResponse.ok) {
+      throw new Error(`Meta media download failed: ${downloadResponse.status} ${await downloadResponse.text()}`);
+    }
+
+    return {
+      mediaId,
+      bytes: await downloadResponse.arrayBuffer(),
+      mimeType: media.mime_type ?? downloadResponse.headers.get("content-type") ?? "application/octet-stream",
+      sha256: media.sha256,
+      fileSize: media.file_size
+    };
   }
 }

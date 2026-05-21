@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "FieldOps Command Center",
-  description: "WhatsApp-native distribution command center for Tier 2 and Tier 3 markets"
+  title: "shipd2r Command Center",
+  description: "WhatsApp-native direct-to-retailer distribution command center"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

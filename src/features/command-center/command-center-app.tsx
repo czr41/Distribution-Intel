@@ -30,25 +30,25 @@ const viewTitles: Record<View, string> = {
 const bulkTemplates: Record<BulkImportType, { title: string; filename: string; columns: string[]; sample: string[] }> = {
   outlet: {
     title: "Outlet Bulk Import",
-    filename: "fieldops-outlet-import-template.csv",
+    filename: "shipd2r-outlet-import-template.csv",
     columns: ["name", "owner", "phone", "city", "channel", "brand", "status"],
     sample: ["Sri Lakshmi Stores", "Ramesh Kumar", "9876543210", "Tumkur", "Kirana store", "NourishCo", "Active"]
   },
   brand: {
     title: "Client Bulk Import",
-    filename: "fieldops-client-import-template.csv",
+    filename: "shipd2r-client-import-template.csv",
     columns: ["name", "category", "contact", "status"],
     sample: ["NourishCo", "Packaged foods", "Ananya Rao", "Active"]
   },
   salesman: {
     title: "Salesman Bulk Import",
-    filename: "fieldops-salesman-import-template.csv",
+    filename: "shipd2r-salesman-import-template.csv",
     columns: ["name", "phone", "city", "territory", "status"],
     sample: ["Rahul Sharma", "9876543201", "Pune", "Pune West", "Active"]
   },
   task: {
     title: "Task Bulk Import",
-    filename: "fieldops-task-import-template.csv",
+    filename: "shipd2r-task-import-template.csv",
     columns: ["title", "description", "taskType", "outlet", "brand", "dueDate", "priority", "status"],
     sample: ["Payment follow-up", "Confirm pending payment collection", "Payment follow-up", "Sri Lakshmi Stores", "NourishCo", "2026-05-22", "High", "Open"]
   }
@@ -544,11 +544,8 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     <div className="app-shell">
       <aside className="sidebar" aria-label="Primary">
         <div className="brand">
-          <div className="brand-mark">F</div>
-          <div>
-            <strong>FieldOps</strong>
-            <span>Distribution OS</span>
-          </div>
+          <img src="/brand/shipd2r-logo.svg" alt="shipd2r" />
+          <span>Direct-to-retailer command center</span>
         </div>
         <nav className="nav-tabs" aria-label="Views">
           {(Object.keys(viewTitles) as View[]).map((view) => (
@@ -569,7 +566,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
 
         <header className="topbar">
           <div>
-            <p className="eyebrow">WhatsApp-first distribution command center</p>
+            <p className="eyebrow">Shipd2r distribution intelligence</p>
             <h1>{viewTitles[activeView]}</h1>
           </div>
           <div className="topbar-actions">

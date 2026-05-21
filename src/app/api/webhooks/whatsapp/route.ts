@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import type { IncomingMessage } from "@/domain/types";
 import { createAIExtractionProvider } from "@/lib/ai/extraction-provider";
-import { parseMetaWebhookMessages, verifyMetaSignature } from "@/lib/messaging/meta-whatsapp-provider";
+import { MetaWhatsAppProvider, parseMetaMediaId, parseMetaWebhookMessages, verifyMetaSignature } from "@/lib/messaging/meta-whatsapp-provider";
 import type { NormalizedIncomingMessage } from "@/lib/providers";
+import { createWhatsAppMediaPath, storeWhatsAppMedia } from "@/lib/storage/whatsapp-media";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type IntegrationRow = {
   app_secret: string | null;
   webhook_verify_token: string | null;
+  access_token: string | null;
+  phone_number_id: string | null;
+  graph_api_version: string | null;
 };
 
 type AIProviderRow = {
@@ -18,8 +22,9 @@ type AIProviderRow = {
 };
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-function toIncomingMessage(rowId: string, message: NormalizedIncomingMessage): IncomingMessage {
+function toIncomingMessage(rowId: string, message: NormalizedIncomingMessage, mediaStoragePath?: string): IncomingMessage {
   const now = new Date().toISOString();
 
   return {
@@ -29,7 +34,7 @@ function toIncomingMessage(rowId: string, message: NormalizedIncomingMessage): I
     senderPhone: message.senderPhone,
     messageType: message.messageType,
     textBody: message.textBody,
-    mediaStoragePath: message.mediaUrl,
+    mediaStoragePath,
     latitude: message.latitude,
     longitude: message.longitude,
     receivedAt: now,
@@ -71,17 +76,26 @@ export async function POST(request: Request) {
   const supabase = createSupabaseAdminClient();
   const { data: integration, error: integrationError } = await supabase
     .from("integration_settings")
-    .select("app_secret,webhook_verify_token")
+    .select("app_secret,webhook_verify_token,access_token,phone_number_id,graph_api_version")
     .eq("provider", "meta_whatsapp")
     .eq("status", "connected")
     .maybeSingle();
 
   if (integrationError) return NextResponse.json({ error: integrationError.message }, { status: 500 });
   const integrationRow = integration as IntegrationRow | null;
-  if (!integrationRow?.app_secret) return NextResponse.json({ error: "Meta WhatsApp integration is not connected" }, { status: 409 });
+  if (!integrationRow?.app_secret || !integrationRow.access_token || !integrationRow.phone_number_id) {
+    return NextResponse.json({ error: "Meta WhatsApp integration is not fully connected" }, { status: 409 });
+  }
 
   const signatureOk = verifyMetaSignature(rawBody, request.headers.get("x-hub-signature-256"), integrationRow.app_secret);
   if (!signatureOk) return NextResponse.json({ error: "Invalid Meta webhook signature" }, { status: 401 });
+
+  const metaProvider = new MetaWhatsAppProvider({
+    accessToken: integrationRow.access_token,
+    appSecret: integrationRow.app_secret,
+    phoneNumberId: integrationRow.phone_number_id,
+    graphApiVersion: integrationRow.graph_api_version ?? "v25.0"
+  });
 
   const { data: aiSettings } = await supabase
     .from("ai_provider_settings")
@@ -127,9 +141,77 @@ export async function POST(request: Request) {
 
     if (incomingError) throw new Error(incomingError.message);
 
+    let mediaStoragePath: string | undefined;
+    let mediaBytes: ArrayBuffer | undefined;
+    let mediaMimeType = message.mediaMimeType;
+    const mediaId = parseMetaMediaId(message.mediaUrl);
+
+    if (mediaId) {
+      const media = await metaProvider.downloadMedia(mediaId);
+      mediaBytes = media.bytes;
+      mediaMimeType = media.mimeType;
+      mediaStoragePath = await storeWhatsAppMedia({
+        bytes: media.bytes,
+        mimeType: media.mimeType,
+        path: createWhatsAppMediaPath({
+          incomingMessageId: incoming.id,
+          mediaId,
+          mimeType: media.mimeType,
+          fallbackFilename: message.mediaFilename
+        })
+      });
+
+      await supabase
+        .from("incoming_messages")
+        .update({
+          media_storage_path: mediaStoragePath,
+          media_url: message.mediaUrl,
+          processing_status: "processing"
+        })
+        .eq("id", incoming.id);
+    }
+
+    let transcriptText: string | undefined;
+    let ocrText: string | undefined;
+    let imageClassification: string | undefined;
+
+    if (mediaBytes && mediaStoragePath && mediaMimeType) {
+      if (message.messageType === "voice") {
+        const transcription = await aiProvider.transcribeAudio({
+          bytes: mediaBytes,
+          storagePath: mediaStoragePath,
+          mimeType: mediaMimeType
+        });
+        transcriptText = transcription.originalText || transcription.translatedText;
+      }
+
+      if (message.messageType === "image" || message.messageType === "document") {
+        const [ocr, classification] = await Promise.all([
+          aiProvider.runOCR({
+            bytes: mediaBytes,
+            storagePath: mediaStoragePath,
+            mimeType: mediaMimeType
+          }),
+          aiProvider.classifyImage?.({
+            bytes: mediaBytes,
+            storagePath: mediaStoragePath,
+            mimeType: mediaMimeType
+          })
+        ]);
+        ocrText = ocr.text;
+        imageClassification = classification?.label;
+      }
+
+      if (message.messageType === "video") {
+        imageClassification = "video_media_stored_for_review";
+      }
+    }
+
     const structured = await aiProvider.extractStructuredData({
-      message: toIncomingMessage(incoming.id, message),
-      imageClassification: message.mediaUrl?.startsWith("meta-media:") ? "meta_media_pending_download" : undefined
+      message: toIncomingMessage(incoming.id, message, mediaStoragePath),
+      transcriptText,
+      ocrText,
+      imageClassification
     });
 
     const { data: extraction, error: extractionError } = await supabase
@@ -137,6 +219,10 @@ export async function POST(request: Request) {
       .insert({
         incoming_message_id: incoming.id,
         extraction_type: structured.category,
+        transcript_text: transcriptText,
+        ocr_text: ocrText,
+        detected_language: structured.language,
+        translated_text: transcriptText,
         structured_json: structured,
         confidence_score: structured.needsHumanReview ? 0.62 : 0.88,
         status: "needs_review"
@@ -152,6 +238,8 @@ export async function POST(request: Request) {
       queue_status: "needs_review",
       priority: structured.needsHumanReview ? "high" : "medium"
     });
+
+    await supabase.from("incoming_messages").update({ processing_status: "needs_review" }).eq("id", incoming.id);
   }
 
   return NextResponse.json({ received: true, messages: messages.length });

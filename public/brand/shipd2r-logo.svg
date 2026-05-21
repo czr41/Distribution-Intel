@@ -1,0 +1,37 @@
+<svg width="1600" height="520" viewBox="0 0 1600 520" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">shipd2r logo</title>
+  <desc id="desc">Typographic shipd2r logo with an integrated ship hull, blue i dot, blue d and r, and black direct-to-retailer arrow.</desc>
+  <defs>
+    <style>
+      .wordmark {
+        font-family: "Arial Rounded MT Bold", "Nunito Sans", "Aptos Display", "Inter", "Segoe UI", sans-serif;
+        font-size: 230px;
+        font-weight: 900;
+        letter-spacing: -12px;
+      }
+      .black { fill: #182128; }
+      .blue { fill: #06b6c8; }
+      .hull { fill: #182128; }
+      .arrow { stroke: #182128; stroke-width: 18; stroke-linecap: round; }
+    </style>
+    <marker id="arrowhead" markerWidth="18" markerHeight="18" refX="14" refY="9" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2L16 9L2 16L5.8 9L2 2Z" fill="#182128"/>
+    </marker>
+  </defs>
+
+  <!-- Ship hull integrated under the wordmark, rising toward the d2r section. -->
+  <path class="hull" d="M108 332H548C567 332 576 356 594 356H682C701 356 707 333 727 333H862C931 333 986 300 1034 266C1014 317 965 401 897 401H186C158 401 129 376 108 332Z"/>
+  <path d="M550 332H592L610 356H671L695 332H725C708 351 698 374 681 374H594C576 374 566 351 550 332Z" fill="#FFFFFF"/>
+
+  <!-- Wordmark. Every letter uses the same baseline for bottom alignment. -->
+  <text class="wordmark black" x="120" y="320">sh</text>
+  <rect x="438" y="153" width="48" height="167" rx="7" fill="#182128"/>
+  <circle cx="462" cy="96" r="28" fill="#06B6C8"/>
+  <text class="wordmark black" x="500" y="320">p</text>
+  <text class="wordmark blue" x="674" y="320">d</text>
+  <text class="wordmark black" x="850" y="320">2</text>
+  <text class="wordmark blue" x="1074" y="320">r</text>
+
+  <!-- Direct-to-retailer arc. Kept above d2r with clear space from the d. -->
+  <path class="arrow" d="M742 98C850 36 1074 41 1246 112" marker-end="url(#arrowhead)"/>
+</svg>
