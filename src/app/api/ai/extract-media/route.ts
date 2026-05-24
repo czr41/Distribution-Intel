@@ -1,0 +1,148 @@
+import { NextResponse } from "next/server";
+import type { FieldMessageType, IncomingMessage } from "@/domain/types";
+import { createAIExtractionProvider } from "@/lib/ai/extraction-provider";
+import { createSupabaseReadClient } from "@/lib/supabase/admin";
+
+type AIProviderRow = {
+  provider: "gemini" | "sarvam" | "ollama_gemma" | "manual";
+  model: string;
+  api_key: string | null;
+  base_url: string | null;
+};
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function mediaKind(mimeType: string | undefined, hasFile: boolean): FieldMessageType {
+  if (!hasFile) return "text";
+  if (mimeType?.startsWith("audio/")) return "voice";
+  if (mimeType?.startsWith("image/")) return "image";
+  if (mimeType === "application/pdf") return "document";
+  if (mimeType?.startsWith("video/")) return "video";
+  return "document";
+}
+
+function createLabMessage(input: {
+  id: string;
+  messageType: FieldMessageType;
+  textBody?: string;
+  fileName?: string;
+}): IncomingMessage {
+  const now = new Date().toISOString();
+
+  return {
+    id: input.id,
+    provider: "media_lab",
+    providerMessageId: input.id,
+    senderPhone: "media-lab",
+    messageType: input.messageType,
+    textBody: input.textBody,
+    mediaStoragePath: input.fileName,
+    receivedAt: now,
+    processingStatus: "needs_review",
+    rawPayloadJson: { source: "media_lab", fileName: input.fileName },
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+async function getConnectedAIProvider() {
+  try {
+    const supabase = createSupabaseReadClient();
+    const { data } = await supabase
+      .from("ai_provider_settings")
+      .select("provider,model,api_key,base_url")
+      .eq("status", "connected")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    return data as AIProviderRow | null;
+  } catch {
+    return null;
+  }
+}
+
+export async function POST(request: Request) {
+  const formData = await request.formData();
+  const file = formData.get("file") instanceof File ? (formData.get("file") as File) : null;
+  const note = String(formData.get("note") ?? "").trim();
+  const bytes = file ? await file.arrayBuffer() : undefined;
+  const kind = mediaKind(file?.type, Boolean(file));
+  const providerSettings = await getConnectedAIProvider();
+  const primaryProvider = createAIExtractionProvider(
+    providerSettings
+      ? {
+          provider: providerSettings.provider,
+          model: providerSettings.model,
+          apiKey: providerSettings.api_key,
+          baseUrl: providerSettings.base_url
+        }
+      : null
+  );
+  const mediaProvider =
+    (kind === "image" || kind === "document") && providerSettings?.provider === "sarvam" && process.env.GEMINI_API_KEY
+      ? createAIExtractionProvider({
+          provider: "gemini",
+          model: "gemini-2.5-flash",
+          apiKey: process.env.GEMINI_API_KEY,
+          baseUrl: null
+        })
+      : primaryProvider;
+
+  let transcriptText = "";
+  let ocrText = "";
+  let imageClassification = "";
+
+  if (bytes && file?.type && kind === "voice") {
+    const transcription = await primaryProvider.transcribeAudio({
+      bytes,
+      storagePath: file.name,
+      mimeType: file.type
+    });
+    transcriptText = transcription.translatedText || transcription.originalText;
+  }
+
+  if (bytes && file?.type && (kind === "image" || kind === "document")) {
+    const [ocr, classification] = await Promise.all([
+      mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type }),
+      mediaProvider.classifyImage?.({ bytes, storagePath: file.name, mimeType: file.type })
+    ]);
+    ocrText = ocr.text;
+    imageClassification = classification?.label ?? "";
+  }
+
+  if (kind === "video") {
+    imageClassification = "video_media_uploaded_for_review";
+  }
+
+  const message = createLabMessage({
+    id: `media-lab-${Date.now()}`,
+    messageType: kind,
+    textBody: note,
+    fileName: file?.name
+  });
+  const structured = await mediaProvider.extractStructuredData({
+    message,
+    transcriptText,
+    ocrText,
+    imageClassification
+  });
+
+  return NextResponse.json({
+    fileName: file?.name ?? "Text only",
+    fileType: file?.type ?? "text/plain",
+    mediaKind: kind,
+    provider: providerSettings?.provider ?? "fallback",
+    model: providerSettings?.model ?? "fallback",
+    transcriptText,
+    ocrText,
+    imageClassification,
+    extractedText: [note, transcriptText, ocrText].filter(Boolean).join("\n\n"),
+    structured,
+    warning:
+      !transcriptText && !ocrText && kind !== "text"
+        ? "No machine text was extracted yet. Check the connected provider or route this media for manual review."
+        : ""
+  });
+}

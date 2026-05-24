@@ -17,7 +17,27 @@ import type {
   TerritoryRow
 } from "./types";
 
-type View = "command" | "inbox" | "verification" | "outlets" | "tasks" | "payments" | "orders" | "bills" | "territories" | "reports" | "partners" | "ops" | "integrations";
+type View = "command" | "inbox" | "verification" | "media" | "outlets" | "tasks" | "payments" | "orders" | "bills" | "territories" | "reports" | "partners" | "ops" | "integrations";
+type MediaLabResult = {
+  fileName: string;
+  fileType: string;
+  mediaKind: string;
+  provider: string;
+  model: string;
+  transcriptText: string;
+  ocrText: string;
+  imageClassification: string;
+  extractedText: string;
+  structured: {
+    category: string;
+    language?: string;
+    summary: string;
+    entities: Record<string, unknown>;
+    suggestedActions: string[];
+    needsHumanReview: boolean;
+  };
+  warning?: string;
+};
 type ModalType = "outlet" | "brand" | "salesman" | "task" | "territory" | "payment" | "order" | "bill" | null;
 type BulkImportType = Exclude<ModalType, null>;
 type EditableMasterData =
@@ -54,6 +74,7 @@ const viewTitles: Record<View, string> = {
   command: "Command Center",
   inbox: "WhatsApp Inbox",
   verification: "Verification Queue",
+  media: "Media Extraction Lab",
   outlets: "Outlet Master",
   tasks: "Tasks",
   payments: "Payments",
@@ -549,6 +570,10 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Approve Current", action: () => verifyRecord(selectedRecord.id), disabled: selectedRecord.id === "empty" },
       { label: "Ask Clarification", action: () => sendBack(selectedRecord.id), disabled: selectedRecord.id === "empty" }
     ],
+    media: [
+      { label: "Configure AI", action: () => setActiveView("integrations") },
+      { label: "Open Inbox", action: () => setActiveView("inbox") }
+    ],
     outlets: [
       { label: "Add Outlet", action: () => openCreate("outlet") },
       { label: "Bulk Import", action: () => openBulkImport("outlet") }
@@ -674,6 +699,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           </section>
         )}
 
+        {activeView === "media" && <MediaLabView aiProvider={aiProvider} />}
         {activeView === "outlets" && <OutletsView outlets={outlets} onAdd={() => openCreate("outlet")} onEdit={(outlet) => openEdit({ type: "outlet", record: outlet })} onBulkImport={() => openBulkImport("outlet")} />}
         {activeView === "partners" && (
           <PartnersView brands={brands} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onBulkImport={() => openBulkImport("brand")} />
@@ -818,6 +844,113 @@ function AIDraft({ record }: { record: CommandRecord }) {
         <Field label="Detected event" value={record.type} />
         <Field label="Confidence" value={`${Math.round(record.confidence * 100)}%`} />
       </div>
+    </div>
+  );
+}
+
+function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
+  const [result, setResult] = useState<MediaLabResult | null>(null);
+  const [error, setError] = useState("");
+  const [isExtracting, setIsExtracting] = useState(false);
+
+  async function extractMedia(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const file = form.get("file") as File | null;
+    const note = String(form.get("note") ?? "").trim();
+
+    if ((!file || file.size === 0) && !note) {
+      setError("Upload a file or paste a field message first.");
+      return;
+    }
+
+    setError("");
+    setIsExtracting(true);
+
+    try {
+      const response = await fetch("/api/ai/extract-media", {
+        method: "POST",
+        body: form
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      setResult((await response.json()) as MediaLabResult);
+    } catch (extractError) {
+      setError(extractError instanceof Error ? extractError.message : "Extraction failed. Check provider settings and try again.");
+    } finally {
+      setIsExtracting(false);
+    }
+  }
+
+  return (
+    <section className="media-lab-grid">
+      <article className="panel media-upload-panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Upload Field Evidence</h2>
+            <p>Test WhatsApp-style voice notes, bill images, PDFs, shelf photos, payment screenshots, or text updates before wiring them into verification.</p>
+          </div>
+          <span className={`tag ${aiProvider.status === "Connected" ? "blue" : "warn"}`}>{aiProvider.provider}</span>
+        </div>
+        <form className="master-form" onSubmit={extractMedia}>
+          <div className="media-dropzone">
+            <strong>Media file</strong>
+            <span>Images, audio, PDF documents, or short videos</span>
+            <input name="file" type="file" accept="image/*,audio/*,application/pdf,video/*" />
+          </div>
+          <div className="form-field">
+            <label htmlFor="media-note">Optional field message</label>
+            <textarea id="media-note" name="note" rows={6} placeholder="Example: Outlet Raj Stores, bill uploaded, payment pending 12400, ask Ramesh to follow up tomorrow." />
+          </div>
+          {error && <p className="form-error">{error}</p>}
+          <div className="action-row">
+            <button className="approve" type="submit" disabled={isExtracting}>{isExtracting ? "Extracting..." : "Extract Text"}</button>
+          </div>
+        </form>
+      </article>
+
+      <article className="panel media-result-panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Extraction Result</h2>
+            <p>Use this to evaluate provider quality before creating verified records from the output.</p>
+          </div>
+          {result && <span className="tag blue">{result.mediaKind}</span>}
+        </div>
+        {!result ? (
+          <div className="empty-state">
+            <strong>No extraction yet</strong>
+            <span>Upload evidence on the left to see transcript, OCR, classification, and the structured draft.</span>
+          </div>
+        ) : (
+          <div className="media-result-stack">
+            <div className="integration-summary">
+              <Field label="File" value={result.fileName} />
+              <Field label="Type" value={result.fileType} />
+              <Field label="Provider" value={result.provider} />
+              <Field label="Model" value={result.model} />
+            </div>
+            {result.warning && <p className="form-error">{result.warning}</p>}
+            <ResultBlock title="Extracted text" value={result.extractedText || "No text extracted yet."} />
+            <ResultBlock title="Voice transcript" value={result.transcriptText || "No voice transcript."} />
+            <ResultBlock title="OCR text" value={result.ocrText || "No OCR text."} />
+            <ResultBlock title="Image / media classification" value={result.imageClassification || "No classification."} />
+            <ResultBlock title="Structured draft" value={JSON.stringify(result.structured, null, 2)} />
+          </div>
+        )}
+      </article>
+    </section>
+  );
+}
+
+function ResultBlock({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="result-block">
+      <h3>{title}</h3>
+      <pre>{value}</pre>
     </div>
   );
 }

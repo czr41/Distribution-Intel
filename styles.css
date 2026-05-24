@@ -37,7 +37,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -324,7 +325,8 @@ h2 {
 }
 
 select,
-input {
+input,
+textarea {
   border: 1px solid var(--line);
   background: var(--surface);
   min-height: 40px;
@@ -334,10 +336,17 @@ input {
 }
 
 select:focus,
-input:focus {
+input:focus,
+textarea:focus {
   border-color: var(--cyan);
   box-shadow: 0 0 0 3px rgba(6, 182, 200, 0.14);
   outline: none;
+}
+
+textarea {
+  min-height: 120px;
+  padding: 12px;
+  resize: vertical;
 }
 
 .queue-list,
@@ -644,6 +653,88 @@ input:focus {
   align-items: start;
 }
 
+.media-lab-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.media-upload-panel,
+.media-result-panel {
+  min-height: 520px;
+}
+
+.media-dropzone {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 1px dashed rgba(6, 182, 200, 0.48);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ecfdff, #ffffff);
+}
+
+.media-dropzone strong {
+  font-size: 16px;
+}
+
+.media-dropzone span,
+.empty-state span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.media-dropzone input {
+  margin-top: 6px;
+  background: #ffffff;
+}
+
+.empty-state {
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  text-align: center;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.media-result-stack {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.result-block {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.result-block h3 {
+  margin: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.result-block pre {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .integration-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -753,6 +844,7 @@ input:focus {
   .verification-grid,
   .ops-grid,
   .integrations-grid,
+  .media-lab-grid,
   .partner-grid {
     grid-template-columns: 1fr;
   }
