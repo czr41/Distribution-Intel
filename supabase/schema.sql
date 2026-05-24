@@ -316,8 +316,8 @@ create table if not exists integration_settings (
 
 create table if not exists ai_provider_settings (
   id uuid primary key default gen_random_uuid(),
-  provider text not null default 'gemini',
-  model text not null default 'gemini-2.5-flash',
+  provider text not null default 'sarvam',
+  model text not null default 'saaras:v3',
   status text not null default 'draft',
   base_url text,
   api_key text,

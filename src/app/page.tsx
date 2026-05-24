@@ -50,8 +50,8 @@ export default async function Home() {
       updatedAt: "--"
     },
     aiProvider: {
-      provider: "gemini" as const,
-      model: "gemini-2.5-flash",
+      provider: "sarvam" as const,
+      model: "saaras:v3",
       status: "Draft" as const,
       baseUrl: "",
       hasApiKey: false,

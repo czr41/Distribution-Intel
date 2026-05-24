@@ -15,7 +15,7 @@ type IntegrationRow = {
 };
 
 type AIProviderRow = {
-  provider: "gemini" | "ollama_gemma" | "manual";
+  provider: "gemini" | "sarvam" | "ollama_gemma" | "manual";
   model: string;
   api_key: string | null;
   base_url: string | null;

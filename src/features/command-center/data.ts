@@ -201,8 +201,8 @@ function defaultMetaIntegration(): MetaIntegrationSettings {
 
 function defaultAIProvider(): AIProviderSettings {
   return {
-    provider: "gemini",
-    model: "gemini-2.5-flash",
+    provider: "sarvam",
+    model: "saaras:v3",
     status: "Draft",
     baseUrl: "",
     hasApiKey: false,
@@ -429,8 +429,8 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   const aiProvider: AIProviderSettings = aiRow
     ? {
         id: aiRow.id,
-        provider: aiRow.provider === "ollama_gemma" || aiRow.provider === "manual" ? aiRow.provider : "gemini",
-        model: aiRow.model ?? "gemini-2.5-flash",
+        provider: aiRow.provider === "sarvam" || aiRow.provider === "ollama_gemma" || aiRow.provider === "manual" ? aiRow.provider : "gemini",
+        model: aiRow.model ?? (aiRow.provider === "sarvam" ? "saaras:v3" : "gemini-2.5-flash"),
         status: displayConnectionStatus(aiRow.status),
         baseUrl: aiRow.base_url ?? "",
         hasApiKey: Boolean(aiRow.api_key),

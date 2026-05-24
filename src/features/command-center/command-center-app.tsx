@@ -1246,10 +1246,10 @@ function IntegrationsView({
         </div>
         <form className="master-form" onSubmit={onSaveAI}>
           <div className="form-grid">
-            <Select name="provider" label="Provider" options={["gemini", "ollama_gemma", "manual"]} defaultValue={aiProvider.provider} />
+            <Select name="provider" label="Provider" options={["sarvam", "gemini", "ollama_gemma", "manual"]} defaultValue={aiProvider.provider} />
             <Input name="model" label="Model" defaultValue={aiProvider.model} />
-            <Input name="baseUrl" label="Base URL" defaultValue={aiProvider.baseUrl} placeholder="Optional for Gemini, required for external Gemma/Ollama" required={false} />
-            <Input name="apiKey" label="API key" type="password" placeholder={aiProvider.hasApiKey ? "Saved. Enter only to replace." : "Gemini API key or external provider key"} required={!aiProvider.hasApiKey && aiProvider.provider !== "manual"} />
+            <Input name="baseUrl" label="Base URL" defaultValue={aiProvider.baseUrl} placeholder="Optional. Sarvam defaults to https://api.sarvam.ai" required={false} />
+            <Input name="apiKey" label="API key" type="password" placeholder={aiProvider.hasApiKey ? "Saved. Enter only to replace." : "Sarvam, Gemini, or external provider key"} required={!aiProvider.hasApiKey && aiProvider.provider !== "manual"} />
             <Select name="extractionMode" label="Extraction mode" options={["structured_json", "draft_only"]} defaultValue={aiProvider.extractionMode} />
             <Select name="status" label="Status" options={["Draft", "Connected", "Disabled"]} defaultValue={aiProvider.status} />
           </div>

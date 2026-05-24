@@ -40,7 +40,8 @@ DIRECT_URL
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
-OPENAI_API_KEY
+SARVAM_API_KEY
+GEMINI_API_KEY
 WHATSAPP_PROVIDER
 WHATSAPP_WEBHOOK_VERIFY_TOKEN
 WHATSAPP_ACCESS_TOKEN
@@ -73,13 +74,13 @@ After Vercel deploys, the webhook route target will be:
 https://YOUR-VERCEL-DOMAIN/api/webhooks/whatsapp
 ```
 
-The route is not implemented yet. Build order:
+The route currently:
 
-1. Create the route.
-2. Verify provider signature/token.
-3. Store raw payload in `incoming_messages`.
-4. Dispatch AI extraction.
-5. Create `verification_queue` item.
+1. Verifies the Meta webhook signature/token.
+2. Stores raw payloads in `incoming_messages`.
+3. Downloads and stores WhatsApp media.
+4. Dispatches AI extraction.
+5. Creates `verification_queue` items.
 
 ## 5. Security Notes
 

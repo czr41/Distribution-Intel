@@ -4,25 +4,23 @@ This is the first executable MVP slice for the build brief:
 
 > Field team uses WhatsApp. Internal team uses command center. Brand partners see verified dashboards.
 
-The current implementation is a dependency-free web prototype that proves the core workflow before we commit to a full backend stack.
+The current implementation is a deployed Next.js command-center MVP backed by Supabase.
 
 ## What Is Built
 
-- WhatsApp-style field intake simulation
-- AI extraction simulation from messy field text
+- WhatsApp-style field intake and Meta webhook route
+- AI extraction provider settings for Sarvam AI and Gemini
 - Human-in-the-loop verification queue
 - Internal command center metrics
 - Partner dashboard that only shows verified records
-- Operations model and MVP module map
+- Supabase-backed CRUD for outlets, salesmen, clients/brands, territories, tasks, payments, orders, and bills
 - Next.js App Router scaffold under `src/app`
 - Typed command-center client component under `src/features/command-center`
 
-Open `index.html` in a browser to run it.
-
-Current local URL:
+Production app:
 
 ```txt
-http://127.0.0.1:4173/index.html
+https://distribution-intel.vercel.app
 ```
 
 The prototype now supports adding:
@@ -31,7 +29,7 @@ The prototype now supports adding:
 - Outlet from `Outlets`
 - Client / brand from `Partners`
 
-These records are stored in browser `localStorage` for demo continuity.
+These records are written to Supabase through server actions.
 
 ## Running the Next.js App
 
@@ -68,7 +66,7 @@ See `CLOUD_DEPLOY.md` for Supabase, Vercel, and environment variable setup.
 - Queue: BullMQ, Temporal, or Cloud Tasks
 - Storage: S3-compatible object storage for images and voice notes
 - Messaging: WhatsApp Cloud API, Gupshup, or Twilio behind a provider interface
-- AI: OpenAI extraction provider behind a swappable interface
+- AI: Sarvam AI for Indian-language voice transcription, Gemini for multimodal extraction, both behind a swappable provider interface
 - Analytics: Postgres views first, then warehouse/BI when volume grows
 
 See `BUILD_PLAN.md`, `src/domain/types.ts`, `src/lib/providers.ts`, `src/lib/permissions.ts`, and `supabase/schema.sql` for the production foundation.

@@ -10,7 +10,7 @@ import type {
 } from "@/lib/providers";
 
 type ProviderConfig = {
-  provider: "gemini" | "ollama_gemma" | "manual";
+  provider: "gemini" | "sarvam" | "ollama_gemma" | "manual";
   model: string;
   apiKey?: string | null;
   baseUrl?: string | null;
@@ -165,6 +165,67 @@ Do not invent missing bill numbers or amounts. Mark uncertain fields for review.
   }
 }
 
+class SarvamExtractionProvider implements AIExtractionProvider {
+  constructor(private readonly config: ProviderConfig) {}
+
+  private get apiKey() {
+    return this.config.apiKey || process.env.SARVAM_API_KEY;
+  }
+
+  private get baseUrl() {
+    return (this.config.baseUrl || "https://api.sarvam.ai").replace(/\/$/, "");
+  }
+
+  async transcribeAudio(input: AudioInput): Promise<TranscriptionResult> {
+    const apiKey = this.apiKey;
+    const bytes = await loadBytes(input);
+    if (!apiKey || !bytes) {
+      return { originalText: "", detectedLanguage: "unknown", translatedText: "", confidenceScore: 0.2 };
+    }
+
+    const formData = new FormData();
+    formData.append("file", new Blob([bytes], { type: input.mimeType }), `voice-note.${input.mimeType.split("/")[1] ?? "bin"}`);
+    formData.append("model", this.config.model || "saaras:v3");
+    formData.append("with_timestamps", "false");
+
+    const response = await fetch(`${this.baseUrl}/speech-to-text`, {
+      method: "POST",
+      headers: {
+        "api-subscription-key": apiKey
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      return { originalText: "", detectedLanguage: "unknown", translatedText: "", confidenceScore: 0.2 };
+    }
+
+    const data = await response.json();
+    const text = data?.transcript ?? data?.transcript_text ?? data?.text ?? "";
+    const language = data?.language_code ?? data?.language ?? data?.detected_language ?? "unknown";
+    const confidence = typeof data?.confidence === "number" ? data.confidence : 0.82;
+
+    return {
+      originalText: text,
+      detectedLanguage: language,
+      translatedText: data?.translated_text ?? text,
+      confidenceScore: confidence
+    };
+  }
+
+  async runOCR(): Promise<OCRResult> {
+    return { text: "", confidenceScore: 0.2 };
+  }
+
+  async classifyImage(): Promise<ImageClassificationResult> {
+    return { label: "media_needs_review", confidenceScore: 0.2 };
+  }
+
+  async extractStructuredData(input: ExtractionInput): Promise<StructuredExtractionResult> {
+    return fallbackExtraction(input);
+  }
+}
+
 class FallbackExtractionProvider implements AIExtractionProvider {
   async transcribeAudio(): Promise<TranscriptionResult> {
     return { originalText: "", detectedLanguage: "unknown", translatedText: "", confidenceScore: 0.2 };
@@ -186,6 +247,10 @@ class FallbackExtractionProvider implements AIExtractionProvider {
 export function createAIExtractionProvider(config?: ProviderConfig | null): AIExtractionProvider {
   if (config?.provider === "gemini" && (config.apiKey || process.env.GEMINI_API_KEY)) {
     return new GeminiExtractionProvider(config);
+  }
+
+  if (config?.provider === "sarvam" && (config.apiKey || process.env.SARVAM_API_KEY)) {
+    return new SarvamExtractionProvider(config);
   }
 
   return new FallbackExtractionProvider();
