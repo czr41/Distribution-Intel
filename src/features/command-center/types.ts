@@ -54,6 +54,47 @@ export type TaskRow = {
   status: "Open" | "In progress" | "Waiting for response" | "Completed" | "Cancelled" | "Overdue";
 };
 
+export type TerritoryRow = {
+  id: string;
+  name: string;
+  city: string;
+  state: string;
+  region: string;
+  status: "Active" | "Inactive";
+};
+
+export type PaymentRow = {
+  id: string;
+  outlet: string;
+  brand: string;
+  amountDue: number;
+  amountCollected: number;
+  dueDate: string;
+  promisedPaymentDate: string;
+  paymentMode: string;
+  status: "Due" | "Partially paid" | "Paid" | "Overdue" | "Disputed" | "Written off";
+  riskLevel: "Low" | "Medium" | "High" | "Critical";
+};
+
+export type OrderRow = {
+  id: string;
+  outlet: string;
+  brand: string;
+  expectedValue: number;
+  expectedDeliveryDate: string;
+  status: "Intent captured" | "Confirmed" | "Billed" | "Delivered" | "Cancelled" | "On hold";
+};
+
+export type BillRow = {
+  id: string;
+  outlet: string;
+  brand: string;
+  billNumber: string;
+  billDate: string;
+  totalAmount: number;
+  paymentStatus: "Due" | "Partially paid" | "Paid" | "Overdue" | "Disputed" | "Written off";
+};
+
 export type MetaIntegrationSettings = {
   id?: string;
   displayName: string;
@@ -90,6 +131,10 @@ export type CommandCenterData = {
   outlets: OutletRow[];
   salesmen: SalesmanRow[];
   tasks: TaskRow[];
+  territories: TerritoryRow[];
+  payments: PaymentRow[];
+  orders: OrderRow[];
+  bills: BillRow[];
   metaIntegration: MetaIntegrationSettings;
   aiProvider: AIProviderSettings;
   setupError?: string;

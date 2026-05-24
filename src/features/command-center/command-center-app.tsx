@@ -1,16 +1,51 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import type { AIProviderSettings, BrandOption, CommandCenterData, CommandRecord, MetaIntegrationSettings, OutletRow, SalesmanRow, TaskRow } from "./types";
+import { useMemo, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
+import type {
+  AIProviderSettings,
+  BillRow,
+  BrandOption,
+  CommandCenterData,
+  CommandRecord,
+  MetaIntegrationSettings,
+  OrderRow,
+  OutletRow,
+  PaymentRow,
+  SalesmanRow,
+  TaskRow,
+  TerritoryRow
+} from "./types";
 
-type View = "command" | "inbox" | "verification" | "outlets" | "tasks" | "reports" | "partners" | "ops" | "integrations";
-type ModalType = "outlet" | "brand" | "salesman" | "task" | null;
+type View = "command" | "inbox" | "verification" | "outlets" | "tasks" | "payments" | "orders" | "bills" | "territories" | "reports" | "partners" | "ops" | "integrations";
+type ModalType = "outlet" | "brand" | "salesman" | "task" | "territory" | "payment" | "order" | "bill" | null;
 type BulkImportType = Exclude<ModalType, null>;
+type EditableMasterData =
+  | { type: "outlet"; record: OutletRow }
+  | { type: "brand"; record: BrandOption }
+  | { type: "salesman"; record: SalesmanRow }
+  | { type: "task"; record: TaskRow }
+  | { type: "territory"; record: TerritoryRow }
+  | { type: "payment"; record: PaymentRow }
+  | { type: "order"; record: OrderRow }
+  | { type: "bill"; record: BillRow };
 type CommandCenterActions = {
-  createBrand: (formData: FormData) => Promise<void>;
-  createOutlet: (formData: FormData) => Promise<void>;
-  createSalesman: (formData: FormData) => Promise<void>;
-  createTask: (formData: FormData) => Promise<void>;
+  createBrand: (formData: FormData) => Promise<BrandOption>;
+  createOutlet: (formData: FormData) => Promise<OutletRow>;
+  createSalesman: (formData: FormData) => Promise<SalesmanRow>;
+  createTask: (formData: FormData) => Promise<TaskRow>;
+  createTerritory: (formData: FormData) => Promise<TerritoryRow>;
+  createPayment: (formData: FormData) => Promise<PaymentRow>;
+  createOrder: (formData: FormData) => Promise<OrderRow>;
+  createBill: (formData: FormData) => Promise<BillRow>;
+  updateBrand: (formData: FormData) => Promise<BrandOption>;
+  updateOutlet: (formData: FormData) => Promise<OutletRow>;
+  updateSalesman: (formData: FormData) => Promise<SalesmanRow>;
+  updateTask: (formData: FormData) => Promise<TaskRow>;
+  updateTerritory: (formData: FormData) => Promise<TerritoryRow>;
+  updatePayment: (formData: FormData) => Promise<PaymentRow>;
+  updateOrder: (formData: FormData) => Promise<OrderRow>;
+  updateBill: (formData: FormData) => Promise<BillRow>;
   saveMetaIntegration: (formData: FormData) => Promise<void>;
   saveAIProvider: (formData: FormData) => Promise<void>;
 };
@@ -20,7 +55,11 @@ const viewTitles: Record<View, string> = {
   inbox: "WhatsApp Inbox",
   verification: "Verification Queue",
   outlets: "Outlet Master",
-  tasks: "Tasks & Payments",
+  tasks: "Tasks",
+  payments: "Payments",
+  orders: "Orders",
+  bills: "Bills",
+  territories: "Territories",
   reports: "Reports",
   partners: "Brand Partner Dashboard",
   ops: "Operations Model",
@@ -51,6 +90,30 @@ const bulkTemplates: Record<BulkImportType, { title: string; filename: string; c
     filename: "shipd2r-task-import-template.csv",
     columns: ["title", "description", "taskType", "outlet", "brand", "dueDate", "priority", "status"],
     sample: ["Payment follow-up", "Confirm pending payment collection", "Payment follow-up", "Sri Lakshmi Stores", "NourishCo", "2026-05-22", "High", "Open"]
+  },
+  territory: {
+    title: "Territory Bulk Import",
+    filename: "shipd2r-territory-import-template.csv",
+    columns: ["name", "city", "state", "region", "status"],
+    sample: ["Pune West", "Pune", "Maharashtra", "West", "Active"]
+  },
+  payment: {
+    title: "Payment Bulk Import",
+    filename: "shipd2r-payment-import-template.csv",
+    columns: ["outlet", "brand", "amountDue", "amountCollected", "dueDate", "promisedPaymentDate", "paymentMode", "status", "riskLevel"],
+    sample: ["Sri Lakshmi Stores", "NourishCo", "12400", "0", "2026-05-28", "2026-05-30", "UPI", "Due", "High"]
+  },
+  order: {
+    title: "Order Bulk Import",
+    filename: "shipd2r-order-import-template.csv",
+    columns: ["outlet", "brand", "expectedValue", "expectedDeliveryDate", "status"],
+    sample: ["Sri Lakshmi Stores", "NourishCo", "8420", "2026-05-29", "Confirmed"]
+  },
+  bill: {
+    title: "Bill Bulk Import",
+    filename: "shipd2r-bill-import-template.csv",
+    columns: ["outlet", "brand", "billNumber", "billDate", "totalAmount", "paymentStatus"],
+    sample: ["Sri Lakshmi Stores", "NourishCo", "INV-1001", "2026-05-24", "8420", "Due"]
   }
 };
 
@@ -112,48 +175,15 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const [brands, setBrands] = useState<BrandOption[]>(initialData.brands);
   const [outlets, setOutlets] = useState<OutletRow[]>(initialData.outlets);
   const [salesmen, setSalesmen] = useState<SalesmanRow[]>(initialData.salesmen);
+  const [territories, setTerritories] = useState<TerritoryRow[]>(initialData.territories);
+  const [payments, setPayments] = useState<PaymentRow[]>(initialData.payments);
+  const [orders, setOrders] = useState<OrderRow[]>(initialData.orders);
+  const [bills, setBills] = useState<BillRow[]>(initialData.bills);
   const [metaIntegration, setMetaIntegration] = useState<MetaIntegrationSettings>(initialData.metaIntegration);
   const [aiProvider, setAIProvider] = useState<AIProviderSettings>(initialData.aiProvider);
-  const [tasks, setTasks] = useState<TaskRow[]>(
-    initialData.tasks.length
-      ? initialData.tasks
-      : [
-          {
-            id: "demo-task-payment",
-            title: "Payment follow-up",
-            description: "Call retailer and confirm pending collection window.",
-            taskType: "Payment follow-up",
-            outlet: "Raj Stores",
-            brand: brands[0]?.name ?? "Unassigned",
-            dueDate: "Today",
-            priority: "High",
-            status: "Open"
-          },
-          {
-            id: "demo-task-order",
-            title: "Order confirmation",
-            description: "Confirm next order quantity after verification.",
-            taskType: "Order confirmation",
-            outlet: "Fresh Basket",
-            brand: brands[1]?.name ?? brands[0]?.name ?? "Unassigned",
-            dueDate: "Tomorrow",
-            priority: "Medium",
-            status: "Open"
-          },
-          {
-            id: "demo-task-display",
-            title: "Display material request",
-            description: "Share display material requirement with operations.",
-            taskType: "Display material request",
-            outlet: "Unassigned",
-            brand: brands[0]?.name ?? "Unassigned",
-            dueDate: "This week",
-            priority: "Low",
-            status: "Waiting for response"
-          }
-        ]
-  );
+  const [tasks, setTasks] = useState<TaskRow[]>(initialData.tasks);
   const [modalType, setModalType] = useState<ModalType>(null);
+  const [editingItem, setEditingItem] = useState<EditableMasterData | null>(null);
   const [bulkImportType, setBulkImportType] = useState<BulkImportType | null>(null);
   const [bulkImportMessage, setBulkImportMessage] = useState("");
   const [partnerFilter, setPartnerFilter] = useState("all");
@@ -185,6 +215,16 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     () => records.filter((record) => record.status === "verified" && (partnerFilter === "all" || record.partner === partnerFilter)),
     [partnerFilter, records]
   );
+
+  function openCreate(type: Exclude<ModalType, null>) {
+    setEditingItem(null);
+    setModalType(type);
+  }
+
+  function openEdit(item: EditableMasterData) {
+    setEditingItem(item);
+    setModalType(item.type);
+  }
 
   function verifyRecord(recordId: string) {
     setRecords((current) =>
@@ -232,76 +272,57 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   async function addMasterData(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const value = (key: string) => String(form.get(key) ?? "").trim();
+    const isEditing = Boolean(editingItem && editingItem.type === modalType);
 
     if (modalType === "outlet") {
-      await actions.createOutlet(form);
-      setOutlets((current) => [
-        {
-          id: `outlet-${Date.now()}`,
-          name: value("name"),
-          owner: value("owner"),
-          phone: value("phone"),
-          city: value("city"),
-          channel: value("channel"),
-          brand: value("brand"),
-          status: value("status") as OutletRow["status"]
-        },
-        ...current
-      ]);
+      const saved = isEditing ? await actions.updateOutlet(form) : await actions.createOutlet(form);
+      setOutlets((current) => (isEditing ? current.map((outlet) => (outlet.id === saved.id ? saved : outlet)) : [saved, ...current]));
       setActiveView("outlets");
     }
 
     if (modalType === "brand") {
-      await actions.createBrand(form);
-      setBrands((current) => [
-        {
-          id: `brand-${Date.now()}`,
-          name: value("name"),
-          category: value("category"),
-          contact: value("contact"),
-          status: value("status") as BrandOption["status"]
-        },
-        ...current
-      ]);
+      const saved = isEditing ? await actions.updateBrand(form) : await actions.createBrand(form);
+      setBrands((current) => (isEditing ? current.map((brand) => (brand.id === saved.id ? saved : brand)) : [saved, ...current]));
       setActiveView("partners");
     }
 
     if (modalType === "salesman") {
-      await actions.createSalesman(form);
-      setSalesmen((current) => [
-        {
-          id: `sales-${Date.now()}`,
-          name: value("name"),
-          phone: value("phone"),
-          city: value("city"),
-          territory: value("territory"),
-          status: value("status") as SalesmanRow["status"]
-        },
-        ...current
-      ]);
+      const saved = isEditing ? await actions.updateSalesman(form) : await actions.createSalesman(form);
+      setSalesmen((current) => (isEditing ? current.map((person) => (person.id === saved.id ? saved : person)) : [saved, ...current]));
       setActiveView("ops");
     }
 
     if (modalType === "task") {
-      await actions.createTask(form);
-      setTasks((current) => [
-        {
-          id: `task-${Date.now()}`,
-          title: value("title"),
-          description: value("description"),
-          taskType: value("taskType"),
-          outlet: value("outlet"),
-          brand: value("brand"),
-          dueDate: value("dueDate") || "No due date",
-          priority: value("priority") as TaskRow["priority"],
-          status: value("status") as TaskRow["status"]
-        },
-        ...current
-      ]);
+      const saved = isEditing ? await actions.updateTask(form) : await actions.createTask(form);
+      setTasks((current) => (isEditing ? current.map((task) => (task.id === saved.id ? saved : task)) : [saved, ...current]));
       setActiveView("tasks");
     }
 
+    if (modalType === "territory") {
+      const saved = isEditing ? await actions.updateTerritory(form) : await actions.createTerritory(form);
+      setTerritories((current) => (isEditing ? current.map((territory) => (territory.id === saved.id ? saved : territory)) : [saved, ...current]));
+      setActiveView("territories");
+    }
+
+    if (modalType === "payment") {
+      const saved = isEditing ? await actions.updatePayment(form) : await actions.createPayment(form);
+      setPayments((current) => (isEditing ? current.map((payment) => (payment.id === saved.id ? saved : payment)) : [saved, ...current]));
+      setActiveView("payments");
+    }
+
+    if (modalType === "order") {
+      const saved = isEditing ? await actions.updateOrder(form) : await actions.createOrder(form);
+      setOrders((current) => (isEditing ? current.map((order) => (order.id === saved.id ? saved : order)) : [saved, ...current]));
+      setActiveView("orders");
+    }
+
+    if (modalType === "bill") {
+      const saved = isEditing ? await actions.updateBill(form) : await actions.createBill(form);
+      setBills((current) => (isEditing ? current.map((bill) => (bill.id === saved.id ? saved : bill)) : [saved, ...current]));
+      setActiveView("bills");
+    }
+
+    setEditingItem(null);
     setModalType(null);
   }
 
@@ -361,67 +382,40 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
 
   async function importRows(type: BulkImportType, rows: Record<string, string>[]) {
     if (type === "outlet") {
+      const savedRows: OutletRow[] = [];
       for (const row of rows) {
         const form = new FormData();
         bulkTemplates.outlet.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Active" : row[column] ?? ""));
-        await actions.createOutlet(form);
+        savedRows.push(await actions.createOutlet(form));
       }
-      setOutlets((current) => [
-        ...rows.map((row, index) => ({
-          id: `bulk-outlet-${Date.now()}-${index}`,
-          name: row.name,
-          owner: row.owner,
-          phone: row.phone,
-          city: row.city,
-          channel: row.channel,
-          brand: row.brand,
-          status: (row.status || "Active") as OutletRow["status"]
-        })),
-        ...current
-      ]);
+      setOutlets((current) => [...savedRows, ...current]);
       setActiveView("outlets");
     }
 
     if (type === "brand") {
+      const savedRows: BrandOption[] = [];
       for (const row of rows) {
         const form = new FormData();
         bulkTemplates.brand.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Active" : row[column] ?? ""));
-        await actions.createBrand(form);
+        savedRows.push(await actions.createBrand(form));
       }
-      setBrands((current) => [
-        ...rows.map((row, index) => ({
-          id: `bulk-brand-${Date.now()}-${index}`,
-          name: row.name,
-          category: row.category,
-          contact: row.contact,
-          status: (row.status || "Active") as BrandOption["status"]
-        })),
-        ...current
-      ]);
+      setBrands((current) => [...savedRows, ...current]);
       setActiveView("partners");
     }
 
     if (type === "salesman") {
+      const savedRows: SalesmanRow[] = [];
       for (const row of rows) {
         const form = new FormData();
         bulkTemplates.salesman.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Active" : row[column] ?? ""));
-        await actions.createSalesman(form);
+        savedRows.push(await actions.createSalesman(form));
       }
-      setSalesmen((current) => [
-        ...rows.map((row, index) => ({
-          id: `bulk-salesman-${Date.now()}-${index}`,
-          name: row.name,
-          phone: row.phone,
-          city: row.city,
-          territory: row.territory,
-          status: (row.status || "Active") as SalesmanRow["status"]
-        })),
-        ...current
-      ]);
+      setSalesmen((current) => [...savedRows, ...current]);
       setActiveView("ops");
     }
 
     if (type === "task") {
+      const savedRows: TaskRow[] = [];
       for (const row of rows) {
         const form = new FormData();
         bulkTemplates.task.columns.forEach((column) => {
@@ -429,23 +423,58 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           else if (column === "status") form.set(column, row[column] || "Open");
           else form.set(column, row[column] ?? "");
         });
-        await actions.createTask(form);
+        savedRows.push(await actions.createTask(form));
       }
-      setTasks((current) => [
-        ...rows.map((row, index) => ({
-          id: `bulk-task-${Date.now()}-${index}`,
-          title: row.title,
-          description: row.description,
-          taskType: row.taskType,
-          outlet: row.outlet,
-          brand: row.brand,
-          dueDate: row.dueDate || "No due date",
-          priority: (row.priority || "Medium") as TaskRow["priority"],
-          status: (row.status || "Open") as TaskRow["status"]
-        })),
-        ...current
-      ]);
+      setTasks((current) => [...savedRows, ...current]);
       setActiveView("tasks");
+    }
+
+    if (type === "territory") {
+      const savedRows: TerritoryRow[] = [];
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.territory.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Active" : row[column] ?? ""));
+        savedRows.push(await actions.createTerritory(form));
+      }
+      setTerritories((current) => [...savedRows, ...current]);
+      setActiveView("territories");
+    }
+
+    if (type === "payment") {
+      const savedRows: PaymentRow[] = [];
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.payment.columns.forEach((column) => {
+          if (column === "status") form.set(column, row[column] || "Due");
+          else if (column === "riskLevel") form.set(column, row[column] || "Medium");
+          else form.set(column, row[column] ?? "");
+        });
+        savedRows.push(await actions.createPayment(form));
+      }
+      setPayments((current) => [...savedRows, ...current]);
+      setActiveView("payments");
+    }
+
+    if (type === "order") {
+      const savedRows: OrderRow[] = [];
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.order.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Intent captured" : row[column] ?? ""));
+        savedRows.push(await actions.createOrder(form));
+      }
+      setOrders((current) => [...savedRows, ...current]);
+      setActiveView("orders");
+    }
+
+    if (type === "bill") {
+      const savedRows: BillRow[] = [];
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.bill.columns.forEach((column) => form.set(column, column === "paymentStatus" ? row[column] || "Due" : row[column] ?? ""));
+        savedRows.push(await actions.createBill(form));
+      }
+      setBills((current) => [...savedRows, ...current]);
+      setActiveView("bills");
     }
   }
 
@@ -508,7 +537,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const pendingRecord = records.find((record) => record.status === "pending");
   const headerActions: Record<View, { label: string; action: () => void; disabled?: boolean }[]> = {
     command: [
-      { label: "Add Outlet", action: () => setModalType("outlet") },
+      { label: "Add Outlet", action: () => openCreate("outlet") },
       { label: "Bulk Import", action: () => openBulkImport("outlet") },
       { label: "Verify Next", action: () => pendingRecord && verifyRecord(pendingRecord.id), disabled: !pendingRecord }
     ],
@@ -521,20 +550,36 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Ask Clarification", action: () => sendBack(selectedRecord.id), disabled: selectedRecord.id === "empty" }
     ],
     outlets: [
-      { label: "Add Outlet", action: () => setModalType("outlet") },
+      { label: "Add Outlet", action: () => openCreate("outlet") },
       { label: "Bulk Import", action: () => openBulkImport("outlet") }
     ],
     tasks: [
-      { label: "Create Task", action: () => setModalType("task") },
+      { label: "Create Task", action: () => openCreate("task") },
       { label: "Bulk Import", action: () => openBulkImport("task") }
+    ],
+    payments: [
+      { label: "Add Payment", action: () => openCreate("payment") },
+      { label: "Bulk Import", action: () => openBulkImport("payment") }
+    ],
+    orders: [
+      { label: "Add Order", action: () => openCreate("order") },
+      { label: "Bulk Import", action: () => openBulkImport("order") }
+    ],
+    bills: [
+      { label: "Add Bill", action: () => openCreate("bill") },
+      { label: "Bulk Import", action: () => openBulkImport("bill") }
+    ],
+    territories: [
+      { label: "Add Territory", action: () => openCreate("territory") },
+      { label: "Bulk Import", action: () => openBulkImport("territory") }
     ],
     reports: [{ label: "Generate Report", action: () => setActiveView("reports") }],
     partners: [
-      { label: "Add Client", action: () => setModalType("brand") },
+      { label: "Add Client", action: () => openCreate("brand") },
       { label: "Bulk Import", action: () => openBulkImport("brand") }
     ],
     ops: [
-      { label: "Add Salesman", action: () => setModalType("salesman") },
+      { label: "Add Salesman", action: () => openCreate("salesman") },
       { label: "Bulk Import", action: () => openBulkImport("salesman") }
     ],
     integrations: [{ label: "Copy Webhook Path", action: () => navigator.clipboard?.writeText(metaIntegration.webhookUrl) }]
@@ -629,12 +674,16 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           </section>
         )}
 
-        {activeView === "outlets" && <OutletsView outlets={outlets} onAdd={() => setModalType("outlet")} onBulkImport={() => openBulkImport("outlet")} />}
+        {activeView === "outlets" && <OutletsView outlets={outlets} onAdd={() => openCreate("outlet")} onEdit={(outlet) => openEdit({ type: "outlet", record: outlet })} onBulkImport={() => openBulkImport("outlet")} />}
         {activeView === "partners" && (
-          <PartnersView brands={brands} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => setModalType("brand")} onBulkImport={() => openBulkImport("brand")} />
+          <PartnersView brands={brands} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onBulkImport={() => openBulkImport("brand")} />
         )}
-        {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => setModalType("salesman")} onBulkImport={() => openBulkImport("salesman")} />}
-        {activeView === "tasks" && <TasksView tasks={tasks} onAdd={() => setModalType("task")} onBulkImport={() => openBulkImport("task")} />}
+        {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => openCreate("salesman")} onEdit={(person) => openEdit({ type: "salesman", record: person })} onBulkImport={() => openBulkImport("salesman")} />}
+        {activeView === "tasks" && <TasksView tasks={tasks} onAdd={() => openCreate("task")} onEdit={(task) => openEdit({ type: "task", record: task })} onBulkImport={() => openBulkImport("task")} />}
+        {activeView === "territories" && <TerritoriesView territories={territories} onAdd={() => openCreate("territory")} onEdit={(territory) => openEdit({ type: "territory", record: territory })} onBulkImport={() => openBulkImport("territory")} />}
+        {activeView === "payments" && <PaymentsView payments={payments} onAdd={() => openCreate("payment")} onEdit={(payment) => openEdit({ type: "payment", record: payment })} onBulkImport={() => openBulkImport("payment")} />}
+        {activeView === "orders" && <OrdersView orders={orders} onAdd={() => openCreate("order")} onEdit={(order) => openEdit({ type: "order", record: order })} onBulkImport={() => openBulkImport("order")} />}
+        {activeView === "bills" && <BillsView bills={bills} onAdd={() => openCreate("bill")} onEdit={(bill) => openEdit({ type: "bill", record: bill })} onBulkImport={() => openBulkImport("bill")} />}
         {activeView === "reports" && <ReportsView />}
         {activeView === "integrations" && (
           <IntegrationsView
@@ -646,7 +695,19 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         )}
       </main>
 
-      {modalType && <MasterDataModal type={modalType} brands={brands} onClose={() => setModalType(null)} onSubmit={addMasterData} />}
+      {modalType && (
+        <MasterDataModal
+          type={modalType}
+          brands={brands}
+          outlets={outlets}
+          initialValues={editingItem?.type === modalType ? editingItem.record : undefined}
+          onClose={() => {
+            setEditingItem(null);
+            setModalType(null);
+          }}
+          onSubmit={addMasterData}
+        />
+      )}
       {bulkImportType && (
         <BulkImportModal
           type={bulkImportType}
@@ -761,7 +822,7 @@ function AIDraft({ record }: { record: CommandRecord }) {
   );
 }
 
-function OutletsView({ outlets, onAdd, onBulkImport }: { outlets: OutletRow[]; onAdd: () => void; onBulkImport: () => void }) {
+function OutletsView({ outlets, onAdd, onEdit, onBulkImport }: { outlets: OutletRow[]; onAdd: () => void; onEdit: (outlet: OutletRow) => void; onBulkImport: () => void }) {
   return (
     <section className="table-layout">
       <div className="panel">
@@ -786,6 +847,7 @@ function OutletsView({ outlets, onAdd, onBulkImport }: { outlets: OutletRow[]; o
             <span>Channel</span>
             <span>Brand</span>
             <span>Status</span>
+            <span>Action</span>
           </div>
           {outlets.map((outlet) => (
             <div className="table-row" key={outlet.id}>
@@ -794,6 +856,9 @@ function OutletsView({ outlets, onAdd, onBulkImport }: { outlets: OutletRow[]; o
               <span>{outlet.channel}</span>
               <span>{outlet.brand}</span>
               <span className={`tag ${outlet.status === "Prospect" ? "warn" : ""}`}>{outlet.status}</span>
+              <button className="link-button" onClick={() => onEdit(outlet)}>
+                Edit
+              </button>
             </div>
           ))}
         </div>
@@ -808,6 +873,7 @@ function PartnersView({
   partnerFilter,
   onFilter,
   onAdd,
+  onEdit,
   onBulkImport
 }: {
   brands: BrandOption[];
@@ -815,6 +881,7 @@ function PartnersView({
   partnerFilter: string;
   onFilter: (value: string) => void;
   onAdd: () => void;
+  onEdit: (brand: BrandOption) => void;
   onBulkImport: () => void;
 }) {
   return (
@@ -850,7 +917,12 @@ function PartnersView({
             const value = brandRecords.reduce((sum, record) => sum + record.value, 0);
             return (
               <article className="partner-card" key={brand.id}>
-                <h2>{brand.name}</h2>
+                <div className="queue-top">
+                  <h2>{brand.name}</h2>
+                  <button className="link-button" onClick={() => onEdit(brand)}>
+                    Edit
+                  </button>
+                </div>
                 <p>{brand.category} client managed by {brand.contact}</p>
                 <div className="field-grid">
                   <Field label="Verified outlets" value={brandRecords.length} />
@@ -866,7 +938,7 @@ function PartnersView({
   );
 }
 
-function OpsView({ salesmen, onAdd, onBulkImport }: { salesmen: SalesmanRow[]; onAdd: () => void; onBulkImport: () => void }) {
+function OpsView({ salesmen, onAdd, onEdit, onBulkImport }: { salesmen: SalesmanRow[]; onAdd: () => void; onEdit: (person: SalesmanRow) => void; onBulkImport: () => void }) {
   return (
     <section className="ops-grid">
       <article className="panel">
@@ -891,6 +963,9 @@ function OpsView({ salesmen, onAdd, onBulkImport }: { salesmen: SalesmanRow[]; o
               <span>{person.phone}</span>
               <span>{person.territory}, {person.city}</span>
               <span className="tag">{person.status}</span>
+              <button className="link-button" onClick={() => onEdit(person)}>
+                Edit
+              </button>
             </div>
           ))}
         </div>
@@ -908,7 +983,7 @@ function OpsView({ salesmen, onAdd, onBulkImport }: { salesmen: SalesmanRow[]; o
   );
 }
 
-function TasksView({ tasks, onAdd, onBulkImport }: { tasks: TaskRow[]; onAdd: () => void; onBulkImport: () => void }) {
+function TasksView({ tasks, onAdd, onEdit, onBulkImport }: { tasks: TaskRow[]; onAdd: () => void; onEdit: (task: TaskRow) => void; onBulkImport: () => void }) {
   return (
     <section className="ops-grid">
       <article className="panel">
@@ -931,7 +1006,12 @@ function TasksView({ tasks, onAdd, onBulkImport }: { tasks: TaskRow[]; onAdd: ()
             <article className="task-row" key={task.id}>
               <div className="queue-top">
                 <strong>{task.title}</strong>
-                <span className={`tag ${task.priority === "High" || task.priority === "Critical" ? "warn" : "blue"}`}>{task.priority}</span>
+                <div className="inline-actions">
+                  <span className={`tag ${task.priority === "High" || task.priority === "Critical" ? "warn" : "blue"}`}>{task.priority}</span>
+                  <button className="link-button" onClick={() => onEdit(task)}>
+                    Edit
+                  </button>
+                </div>
               </div>
               <p>{task.description}</p>
               <div className="record-meta">
@@ -955,6 +1035,127 @@ function TasksView({ tasks, onAdd, onBulkImport }: { tasks: TaskRow[]; onAdd: ()
           ))}
         </div>
       </article>
+    </section>
+  );
+}
+
+function TerritoriesView({ territories, onAdd, onEdit, onBulkImport }: { territories: TerritoryRow[]; onAdd: () => void; onEdit: (territory: TerritoryRow) => void; onBulkImport: () => void }) {
+  return (
+    <CrudPanel title="Territory Master" description="Cities, beats, and market expansion zones." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Territory">
+      {territories.map((territory) => (
+        <article className="task-row" key={territory.id}>
+          <div className="queue-top">
+            <strong>{territory.name}</strong>
+            <button className="link-button" onClick={() => onEdit(territory)}>Edit</button>
+          </div>
+          <div className="record-meta">
+            <span>{territory.city}</span>
+            <span>{territory.state}</span>
+            <span>{territory.region}</span>
+            <span className="tag blue">{territory.status}</span>
+          </div>
+        </article>
+      ))}
+    </CrudPanel>
+  );
+}
+
+function PaymentsView({ payments, onAdd, onEdit, onBulkImport }: { payments: PaymentRow[]; onAdd: () => void; onEdit: (payment: PaymentRow) => void; onBulkImport: () => void }) {
+  return (
+    <CrudPanel title="Payment Tracker" description="Dues, collections, promises, and risk levels." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Payment">
+      {payments.map((payment) => (
+        <article className="task-row" key={payment.id}>
+          <div className="queue-top">
+            <strong>{payment.outlet}</strong>
+            <div className="inline-actions">
+              <span className={`tag ${payment.riskLevel === "High" || payment.riskLevel === "Critical" ? "warn" : "blue"}`}>{payment.riskLevel}</span>
+              <button className="link-button" onClick={() => onEdit(payment)}>Edit</button>
+            </div>
+          </div>
+          <p>{payment.brand} · {money(payment.amountCollected)} collected of {money(payment.amountDue)}</p>
+          <div className="record-meta">
+            <span>Due {payment.dueDate}</span>
+            <span>Promise {payment.promisedPaymentDate}</span>
+            <span>{payment.paymentMode}</span>
+            <span className="tag blue">{payment.status}</span>
+          </div>
+        </article>
+      ))}
+    </CrudPanel>
+  );
+}
+
+function OrdersView({ orders, onAdd, onEdit, onBulkImport }: { orders: OrderRow[]; onAdd: () => void; onEdit: (order: OrderRow) => void; onBulkImport: () => void }) {
+  return (
+    <CrudPanel title="Orders" description="Order intents, confirmations, delivery expectations, and billing progression." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Order">
+      {orders.map((order) => (
+        <article className="task-row" key={order.id}>
+          <div className="queue-top">
+            <strong>{order.outlet}</strong>
+            <button className="link-button" onClick={() => onEdit(order)}>Edit</button>
+          </div>
+          <p>{order.brand} · {money(order.expectedValue)}</p>
+          <div className="record-meta">
+            <span>Delivery {order.expectedDeliveryDate}</span>
+            <span className="tag blue">{order.status}</span>
+          </div>
+        </article>
+      ))}
+    </CrudPanel>
+  );
+}
+
+function BillsView({ bills, onAdd, onEdit, onBulkImport }: { bills: BillRow[]; onAdd: () => void; onEdit: (bill: BillRow) => void; onBulkImport: () => void }) {
+  return (
+    <CrudPanel title="Bills" description="Invoice records captured from field updates, photos, or admin entry." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Bill">
+      {bills.map((bill) => (
+        <article className="task-row" key={bill.id}>
+          <div className="queue-top">
+            <strong>{bill.billNumber}</strong>
+            <button className="link-button" onClick={() => onEdit(bill)}>Edit</button>
+          </div>
+          <p>{bill.outlet} · {bill.brand}</p>
+          <div className="record-meta">
+            <span>{bill.billDate}</span>
+            <span>{money(bill.totalAmount)}</span>
+            <span className="tag blue">{bill.paymentStatus}</span>
+          </div>
+        </article>
+      ))}
+    </CrudPanel>
+  );
+}
+
+function CrudPanel({
+  title,
+  description,
+  addLabel,
+  onAdd,
+  onBulkImport,
+  children
+}: {
+  title: string;
+  description: string;
+  addLabel: string;
+  onAdd: () => void;
+  onBulkImport: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="table-layout">
+      <div className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>{title}</h2>
+            <p>{description}</p>
+          </div>
+          <div className="panel-actions">
+            <button className="secondary-button" onClick={onBulkImport}>Bulk Import</button>
+            <button className="primary-button" onClick={onAdd}>{addLabel}</button>
+          </div>
+        </div>
+        <div className="task-list">{children}</div>
+      </div>
     </section>
   );
 }
@@ -1120,9 +1321,50 @@ function BulkImportModal({
   );
 }
 
-function MasterDataModal({ type, brands, onClose, onSubmit }: { type: Exclude<ModalType, null>; brands: BrandOption[]; onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
-  const title = type === "outlet" ? "Add Outlet" : type === "brand" ? "Add Brand Client" : type === "salesman" ? "Add Salesman" : "Create Task";
+function MasterDataModal({
+  type,
+  brands,
+  outlets,
+  initialValues,
+  onClose,
+  onSubmit
+}: {
+  type: Exclude<ModalType, null>;
+  brands: BrandOption[];
+  outlets: OutletRow[];
+  initialValues?: OutletRow | BrandOption | SalesmanRow | TaskRow | TerritoryRow | PaymentRow | OrderRow | BillRow;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const isEditing = Boolean(initialValues);
+  const noun =
+    type === "brand"
+      ? "Brand Client"
+      : type === "salesman"
+        ? "Salesman"
+        : type === "territory"
+          ? "Territory"
+          : type === "payment"
+            ? "Payment"
+            : type === "order"
+              ? "Order"
+              : type === "bill"
+                ? "Bill"
+                : type === "task"
+                  ? "Task"
+                  : "Outlet";
+  const title = `${isEditing ? "Edit" : type === "task" ? "Create" : "Add"} ${noun}`;
   const brandOptions = brands.length ? brands.map((brand) => brand.name) : ["Unassigned"];
+  const outletOptions = outlets.length ? outlets.map((outlet) => outlet.name) : ["Unassigned"];
+  const outletValues = type === "outlet" ? (initialValues as OutletRow | undefined) : undefined;
+  const brandValues = type === "brand" ? (initialValues as BrandOption | undefined) : undefined;
+  const salesmanValues = type === "salesman" ? (initialValues as SalesmanRow | undefined) : undefined;
+  const taskValues = type === "task" ? (initialValues as TaskRow | undefined) : undefined;
+  const territoryValues = type === "territory" ? (initialValues as TerritoryRow | undefined) : undefined;
+  const paymentValues = type === "payment" ? (initialValues as PaymentRow | undefined) : undefined;
+  const orderValues = type === "order" ? (initialValues as OrderRow | undefined) : undefined;
+  const billValues = type === "bill" ? (initialValues as BillRow | undefined) : undefined;
+
   return (
     <div className="modal-backdrop">
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
@@ -1134,50 +1376,92 @@ function MasterDataModal({ type, brands, onClose, onSubmit }: { type: Exclude<Mo
           <button className="icon-button" onClick={onClose} title="Close">x</button>
         </div>
         <form className="master-form" onSubmit={onSubmit}>
+          {initialValues?.id && <input type="hidden" name="id" value={initialValues.id} />}
           <div className="form-grid">
             {type === "outlet" && (
               <>
-                <Input name="name" label="Outlet name" />
-                <Input name="owner" label="Owner / contact" />
-                <Input name="phone" label="Phone / WhatsApp" />
-                <Input name="city" label="City" />
-                <Input name="channel" label="Channel type" />
-                <Select name="brand" label="Brand client" options={brands.map((brand) => brand.name)} />
-                <Select name="status" label="Status" options={["Active", "Prospect", "Inactive"]} />
+                <Input name="name" label="Outlet name" defaultValue={outletValues?.name} />
+                <Input name="owner" label="Owner / contact" defaultValue={outletValues?.owner} />
+                <Input name="phone" label="Phone / WhatsApp" defaultValue={outletValues?.phone} />
+                <Input name="city" label="City" defaultValue={outletValues?.city} />
+                <Input name="channel" label="Channel type" defaultValue={outletValues?.channel} />
+                <Select name="brand" label="Brand client" options={brandOptions} defaultValue={outletValues?.brand} />
+                <Select name="status" label="Status" options={["Active", "Prospect", "Inactive"]} defaultValue={outletValues?.status} />
               </>
             )}
             {type === "brand" && (
               <>
-                <Input name="name" label="Brand / client name" />
-                <Input name="category" label="Category" />
-                <Input name="contact" label="Contact person" />
-                <Select name="status" label="Status" options={["Active", "Inactive"]} />
+                <Input name="name" label="Brand / client name" defaultValue={brandValues?.name} />
+                <Input name="category" label="Category" defaultValue={brandValues?.category} />
+                <Input name="contact" label="Contact person" defaultValue={brandValues?.contact} />
+                <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={brandValues?.status} />
               </>
             )}
             {type === "salesman" && (
               <>
-                <Input name="name" label="Salesman name" />
-                <Input name="phone" label="WhatsApp number" />
-                <Input name="city" label="City" />
-                <Input name="territory" label="Territory" />
-                <Select name="status" label="Status" options={["Active", "Inactive"]} />
+                <Input name="name" label="Salesman name" defaultValue={salesmanValues?.name} />
+                <Input name="phone" label="WhatsApp number" defaultValue={salesmanValues?.phone} />
+                <Input name="city" label="City" defaultValue={salesmanValues?.city} />
+                <Input name="territory" label="Territory" defaultValue={salesmanValues?.territory} />
+                <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={salesmanValues?.status} />
               </>
             )}
             {type === "task" && (
               <>
-                <Input name="title" label="Task title" />
-                <Select name="taskType" label="Task type" options={["Payment follow-up", "Order confirmation", "Delivery follow-up", "Complaint resolution", "Stock refill", "Display material request", "New outlet onboarding", "Manager escalation"]} />
-                <Input name="description" label="Description" />
-                <Input name="outlet" label="Outlet" />
-                <Select name="brand" label="Brand client" options={brandOptions} />
-                <Input name="dueDate" label="Due date" type="date" required={false} />
-                <Select name="priority" label="Priority" options={["Low", "Medium", "High", "Critical"]} />
-                <Select name="status" label="Status" options={["Open", "In progress", "Waiting for response", "Completed", "Cancelled", "Overdue"]} />
+                <Input name="title" label="Task title" defaultValue={taskValues?.title} />
+                <Select name="taskType" label="Task type" options={["Payment follow-up", "Order confirmation", "Delivery follow-up", "Complaint resolution", "Stock refill", "Display material request", "New outlet onboarding", "Manager escalation"]} defaultValue={taskValues?.taskType} />
+                <Input name="description" label="Description" defaultValue={taskValues?.description} />
+                <Input name="outlet" label="Outlet" defaultValue={taskValues?.outlet === "Unassigned" ? "" : taskValues?.outlet} />
+                <Select name="brand" label="Brand client" options={brandOptions} defaultValue={taskValues?.brand} />
+                <Input name="dueDate" label="Due date" type="date" required={false} defaultValue={taskValues?.dueDate === "No due date" ? "" : taskValues?.dueDate} />
+                <Select name="priority" label="Priority" options={["Low", "Medium", "High", "Critical"]} defaultValue={taskValues?.priority} />
+                <Select name="status" label="Status" options={["Open", "In progress", "Waiting for response", "Completed", "Cancelled", "Overdue"]} defaultValue={taskValues?.status} />
+              </>
+            )}
+            {type === "territory" && (
+              <>
+                <Input name="name" label="Territory name" defaultValue={territoryValues?.name} />
+                <Input name="city" label="City" defaultValue={territoryValues?.city} />
+                <Input name="state" label="State" defaultValue={territoryValues?.state} />
+                <Input name="region" label="Region" defaultValue={territoryValues?.region === "Unassigned" ? "" : territoryValues?.region} required={false} />
+                <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={territoryValues?.status} />
+              </>
+            )}
+            {type === "payment" && (
+              <>
+                <Select name="outlet" label="Outlet" options={outletOptions} defaultValue={paymentValues?.outlet} />
+                <Select name="brand" label="Brand client" options={brandOptions} defaultValue={paymentValues?.brand} />
+                <Input name="amountDue" label="Amount due" type="number" defaultValue={paymentValues?.amountDue ? String(paymentValues.amountDue) : undefined} />
+                <Input name="amountCollected" label="Amount collected" type="number" defaultValue={paymentValues ? String(paymentValues.amountCollected) : undefined} required={false} />
+                <Input name="dueDate" label="Due date" type="date" defaultValue={paymentValues?.dueDate === "No due date" ? "" : paymentValues?.dueDate} required={false} />
+                <Input name="promisedPaymentDate" label="Promised date" type="date" defaultValue={paymentValues?.promisedPaymentDate === "No promise" ? "" : paymentValues?.promisedPaymentDate} required={false} />
+                <Input name="paymentMode" label="Payment mode" defaultValue={paymentValues?.paymentMode === "Unassigned" ? "" : paymentValues?.paymentMode} required={false} />
+                <Select name="status" label="Status" options={["Due", "Partially paid", "Paid", "Overdue", "Disputed", "Written off"]} defaultValue={paymentValues?.status} />
+                <Select name="riskLevel" label="Risk level" options={["Low", "Medium", "High", "Critical"]} defaultValue={paymentValues?.riskLevel} />
+              </>
+            )}
+            {type === "order" && (
+              <>
+                <Select name="outlet" label="Outlet" options={outletOptions} defaultValue={orderValues?.outlet} />
+                <Select name="brand" label="Brand client" options={brandOptions} defaultValue={orderValues?.brand} />
+                <Input name="expectedValue" label="Expected value" type="number" defaultValue={orderValues?.expectedValue ? String(orderValues.expectedValue) : undefined} />
+                <Input name="expectedDeliveryDate" label="Expected delivery date" type="date" defaultValue={orderValues?.expectedDeliveryDate === "No delivery date" ? "" : orderValues?.expectedDeliveryDate} required={false} />
+                <Select name="status" label="Status" options={["Intent captured", "Confirmed", "Billed", "Delivered", "Cancelled", "On hold"]} defaultValue={orderValues?.status} />
+              </>
+            )}
+            {type === "bill" && (
+              <>
+                <Select name="outlet" label="Outlet" options={outletOptions} defaultValue={billValues?.outlet} />
+                <Select name="brand" label="Brand client" options={brandOptions} defaultValue={billValues?.brand} />
+                <Input name="billNumber" label="Bill number" defaultValue={billValues?.billNumber === "Unnumbered" ? "" : billValues?.billNumber} required={false} />
+                <Input name="billDate" label="Bill date" type="date" defaultValue={billValues?.billDate === "No bill date" ? "" : billValues?.billDate} required={false} />
+                <Input name="totalAmount" label="Total amount" type="number" defaultValue={billValues?.totalAmount ? String(billValues.totalAmount) : undefined} />
+                <Select name="paymentStatus" label="Payment status" options={["Due", "Partially paid", "Paid", "Overdue", "Disputed", "Written off"]} defaultValue={billValues?.paymentStatus} />
               </>
             )}
           </div>
           <div className="action-row">
-            <button className="approve" type="submit">Save</button>
+            <button className="approve" type="submit">{isEditing ? "Update" : "Save"}</button>
             <button className="reject" type="button" onClick={onClose}>Cancel</button>
           </div>
         </form>

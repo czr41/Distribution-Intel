@@ -1,5 +1,18 @@
 import { createSupabaseReadClient } from "@/lib/supabase/admin";
-import type { AIProviderSettings, BrandOption, CommandCenterData, CommandRecord, MetaIntegrationSettings, OutletRow, SalesmanRow, TaskRow } from "./types";
+import type {
+  AIProviderSettings,
+  BillRow,
+  BrandOption,
+  CommandCenterData,
+  CommandRecord,
+  MetaIntegrationSettings,
+  OrderRow,
+  OutletRow,
+  PaymentRow,
+  SalesmanRow,
+  TaskRow,
+  TerritoryRow
+} from "./types";
 
 type OutletBrandJoin = {
   brands?: { name?: string | null } | { name?: string | null }[] | null;
@@ -32,6 +45,47 @@ type TaskResult = {
   due_date: string | null;
   priority: string | null;
   status: string | null;
+  outlets?: { name?: string | null } | { name?: string | null }[] | null;
+  brands?: { name?: string | null } | { name?: string | null }[] | null;
+};
+
+type TerritoryResult = {
+  id: string;
+  name: string;
+  city: string;
+  state: string;
+  region: string | null;
+  status: string | null;
+};
+
+type PaymentResult = {
+  id: string;
+  amount_due: number | string | null;
+  amount_collected: number | string | null;
+  due_date: string | null;
+  promised_payment_date: string | null;
+  payment_mode: string | null;
+  status: string | null;
+  risk_level: string | null;
+  outlets?: { name?: string | null } | { name?: string | null }[] | null;
+  brands?: { name?: string | null } | { name?: string | null }[] | null;
+};
+
+type OrderResult = {
+  id: string;
+  expected_value: number | string | null;
+  expected_delivery_date: string | null;
+  status: string | null;
+  outlets?: { name?: string | null } | { name?: string | null }[] | null;
+  brands?: { name?: string | null } | { name?: string | null }[] | null;
+};
+
+type BillResult = {
+  id: string;
+  bill_number: string | null;
+  bill_date: string | null;
+  total_amount: number | string | null;
+  payment_status: string | null;
   outlets?: { name?: string | null } | { name?: string | null }[] | null;
   brands?: { name?: string | null } | { name?: string | null }[] | null;
 };
@@ -91,6 +145,36 @@ function displayTaskPriority(priority?: string | null): TaskRow["priority"] {
   return "Medium";
 }
 
+function numberValue(value?: number | string | null) {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function displayRiskLevel(risk?: string | null): PaymentRow["riskLevel"] {
+  if (risk === "low") return "Low";
+  if (risk === "high") return "High";
+  if (risk === "critical") return "Critical";
+  return "Medium";
+}
+
+function displayPaymentStatus(status?: string | null): PaymentRow["status"] {
+  if (status === "partially_paid") return "Partially paid";
+  if (status === "paid") return "Paid";
+  if (status === "overdue") return "Overdue";
+  if (status === "disputed") return "Disputed";
+  if (status === "written_off") return "Written off";
+  return "Due";
+}
+
+function displayOrderStatus(status?: string | null): OrderRow["status"] {
+  if (status === "confirmed") return "Confirmed";
+  if (status === "billed") return "Billed";
+  if (status === "delivered") return "Delivered";
+  if (status === "cancelled") return "Cancelled";
+  if (status === "on_hold") return "On hold";
+  return "Intent captured";
+}
+
 function displayConnectionStatus(status?: string | null): "Connected" | "Draft" | "Disabled" {
   if (status === "connected") return "Connected";
   if (status === "disabled") return "Disabled";
@@ -132,7 +216,18 @@ function defaultAIProvider(): AIProviderSettings {
 export async function getCommandCenterData(): Promise<CommandCenterData> {
   const supabase = createSupabaseReadClient();
 
-  const [brandsResult, outletsResult, salesmenResult, tasksResult, metaIntegrationResult, aiProviderResult] = await Promise.all([
+  const [
+    brandsResult,
+    outletsResult,
+    salesmenResult,
+    tasksResult,
+    territoriesResult,
+    paymentsResult,
+    ordersResult,
+    billsResult,
+    metaIntegrationResult,
+    aiProviderResult
+  ] = await Promise.all([
     supabase.from("brands").select("id,name,category,contact_person,status").order("created_at", { ascending: false }),
     supabase
       .from("outlets")
@@ -145,6 +240,19 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     supabase
       .from("tasks")
       .select("id,title,description,task_type,due_date,priority,status,outlets(name),brands(name)")
+      .order("created_at", { ascending: false }),
+    supabase.from("territories").select("id,name,city,state,region,status").order("created_at", { ascending: false }),
+    supabase
+      .from("payments")
+      .select("id,amount_due,amount_collected,due_date,promised_payment_date,payment_mode,status,risk_level,outlets(name),brands(name)")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("orders")
+      .select("id,expected_value,expected_delivery_date,status,outlets(name),brands(name)")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("bills")
+      .select("id,bill_number,bill_date,total_amount,payment_status,outlets(name),brands(name)")
       .order("created_at", { ascending: false }),
     supabase
       .from("integration_settings")
@@ -163,6 +271,10 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   if (outletsResult.error) throw new Error(outletsResult.error.message);
   if (salesmenResult.error) throw new Error(salesmenResult.error.message);
   if (tasksResult.error) throw new Error(tasksResult.error.message);
+  if (territoriesResult.error) throw new Error(territoriesResult.error.message);
+  if (paymentsResult.error) throw new Error(paymentsResult.error.message);
+  if (ordersResult.error) throw new Error(ordersResult.error.message);
+  if (billsResult.error) throw new Error(billsResult.error.message);
   if (metaIntegrationResult.error) throw new Error(metaIntegrationResult.error.message);
   if (aiProviderResult.error) throw new Error(aiProviderResult.error.message);
 
@@ -237,6 +349,62 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     };
   });
 
+  const territories: TerritoryRow[] = ((territoriesResult.data ?? []) as TerritoryResult[]).map((territory) => ({
+    id: territory.id,
+    name: territory.name,
+    city: territory.city,
+    state: territory.state,
+    region: territory.region ?? "Unassigned",
+    status: displayBrandStatus(territory.status)
+  }));
+
+  const payments: PaymentRow[] = ((paymentsResult.data ?? []) as PaymentResult[]).map((payment) => {
+    const outlet = Array.isArray(payment.outlets) ? payment.outlets[0] : payment.outlets;
+    const brand = Array.isArray(payment.brands) ? payment.brands[0] : payment.brands;
+
+    return {
+      id: payment.id,
+      outlet: outlet?.name ?? "Unassigned",
+      brand: brand?.name ?? "Unassigned",
+      amountDue: numberValue(payment.amount_due),
+      amountCollected: numberValue(payment.amount_collected),
+      dueDate: payment.due_date ?? "No due date",
+      promisedPaymentDate: payment.promised_payment_date ?? "No promise",
+      paymentMode: payment.payment_mode ?? "Unassigned",
+      status: displayPaymentStatus(payment.status),
+      riskLevel: displayRiskLevel(payment.risk_level)
+    };
+  });
+
+  const orders: OrderRow[] = ((ordersResult.data ?? []) as OrderResult[]).map((order) => {
+    const outlet = Array.isArray(order.outlets) ? order.outlets[0] : order.outlets;
+    const brand = Array.isArray(order.brands) ? order.brands[0] : order.brands;
+
+    return {
+      id: order.id,
+      outlet: outlet?.name ?? "Unassigned",
+      brand: brand?.name ?? "Unassigned",
+      expectedValue: numberValue(order.expected_value),
+      expectedDeliveryDate: order.expected_delivery_date ?? "No delivery date",
+      status: displayOrderStatus(order.status)
+    };
+  });
+
+  const bills: BillRow[] = ((billsResult.data ?? []) as BillResult[]).map((bill) => {
+    const outlet = Array.isArray(bill.outlets) ? bill.outlets[0] : bill.outlets;
+    const brand = Array.isArray(bill.brands) ? bill.brands[0] : bill.brands;
+
+    return {
+      id: bill.id,
+      outlet: outlet?.name ?? "Unassigned",
+      brand: brand?.name ?? "Unassigned",
+      billNumber: bill.bill_number ?? "Unnumbered",
+      billDate: bill.bill_date ?? "No bill date",
+      totalAmount: numberValue(bill.total_amount),
+      paymentStatus: displayPaymentStatus(bill.payment_status)
+    };
+  });
+
   const metaRow = metaIntegrationResult.data as IntegrationSettingsResult | null;
   const metaIntegration: MetaIntegrationSettings = metaRow
     ? {
@@ -273,5 +441,5 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       }
     : defaultAIProvider();
 
-  return { records, brands, outlets, salesmen, tasks, metaIntegration, aiProvider };
+  return { records, brands, outlets, salesmen, tasks, territories, payments, orders, bills, metaIntegration, aiProvider };
 }

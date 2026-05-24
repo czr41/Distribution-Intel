@@ -4,8 +4,20 @@ import {
   createOutletAction,
   createSalesmanAction,
   createTaskAction,
+  createTerritoryAction,
+  createPaymentAction,
+  createOrderAction,
+  createBillAction,
   saveAIProviderAction,
-  saveMetaIntegrationAction
+  saveMetaIntegrationAction,
+  updateBrandAction,
+  updateOutletAction,
+  updateSalesmanAction,
+  updateTaskAction,
+  updateTerritoryAction,
+  updatePaymentAction,
+  updateOrderAction,
+  updateBillAction
 } from "@/features/command-center/actions";
 import { getCommandCenterData } from "@/features/command-center/data";
 
@@ -18,6 +30,10 @@ export default async function Home() {
     outlets: [],
     salesmen: [],
     tasks: [],
+    territories: [],
+    payments: [],
+    orders: [],
+    bills: [],
     metaIntegration: {
       displayName: "Meta WhatsApp Cloud API",
       status: "Draft" as const,
@@ -55,6 +71,18 @@ export default async function Home() {
         createOutlet: createOutletAction,
         createSalesman: createSalesmanAction,
         createTask: createTaskAction,
+        createTerritory: createTerritoryAction,
+        createPayment: createPaymentAction,
+        createOrder: createOrderAction,
+        createBill: createBillAction,
+        updateBrand: updateBrandAction,
+        updateOutlet: updateOutletAction,
+        updateSalesman: updateSalesmanAction,
+        updateTask: updateTaskAction,
+        updateTerritory: updateTerritoryAction,
+        updatePayment: updatePaymentAction,
+        updateOrder: updateOrderAction,
+        updateBill: updateBillAction,
         saveMetaIntegration: saveMetaIntegrationAction,
         saveAIProvider: saveAIProviderAction
       }}
