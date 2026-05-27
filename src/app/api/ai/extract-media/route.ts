@@ -18,6 +18,7 @@ type OpenAIFallbackConfig = {
   baseUrl?: string;
   apiKey?: string;
 };
+type MediaProviderMode = "auto" | "sarvam" | "openai";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -83,11 +84,17 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Media extraction failed. Check provider settings and try again.";
 }
 
+function mediaProviderMode(value: FormDataEntryValue | null): MediaProviderMode {
+  const normalized = String(value ?? "auto").trim().toLowerCase();
+  return normalized === "sarvam" || normalized === "openai" ? normalized : "auto";
+}
+
 async function extractMedia(request: Request) {
   const formData = await request.formData();
   const fileInput = formData.get("file");
   const file = fileInput instanceof File && fileInput.size > 0 ? fileInput : null;
   const note = String(formData.get("note") ?? "").trim();
+  const providerMode = mediaProviderMode(formData.get("providerMode"));
   const bytes = file ? await file.arrayBuffer() : undefined;
   const kind = mediaKind(file?.type, Boolean(file));
   const providerSettings = await getConnectedAIProvider();
@@ -112,9 +119,20 @@ async function extractMedia(request: Request) {
         baseUrl: openAIConfig.baseUrl || null
       })
     : null;
-  let mediaProvider = primaryProvider;
-  let mediaProviderName = providerSettings?.provider ?? "fallback";
-  let mediaModel = providerSettings?.model ?? "fallback";
+  const sarvamProvider = createAIExtractionProvider({
+    provider: "sarvam",
+    model: providerSettings?.provider === "sarvam" ? providerSettings.model : "saaras:v3",
+    apiKey: providerSettings?.provider === "sarvam" ? providerSettings.api_key : process.env.SARVAM_API_KEY,
+    baseUrl: providerSettings?.provider === "sarvam" ? providerSettings.base_url : null
+  });
+  let mediaProvider = providerMode === "sarvam" ? sarvamProvider : providerMode === "openai" && openAIFallbackProvider ? openAIFallbackProvider : primaryProvider;
+  let mediaProviderName = providerMode === "sarvam" ? "sarvam" : providerMode === "openai" ? "openai" : providerSettings?.provider ?? "fallback";
+  let mediaModel =
+    providerMode === "sarvam"
+      ? providerSettings?.provider === "sarvam" ? providerSettings.model : "saaras:v3"
+      : providerMode === "openai"
+        ? openAIConfig.model || process.env.OPENAI_MODEL || "gpt-5.4-mini"
+        : providerSettings?.model ?? "fallback";
   let fallbackWarning = "";
   const geminiFallbackProvider =
     process.env.GEMINI_API_KEY && (kind === "image" || kind === "document")
@@ -130,15 +148,19 @@ async function extractMedia(request: Request) {
   let ocrText = "";
   let imageClassification = "";
 
+  if (providerMode === "openai" && !openAIFallbackProvider) {
+    throw new Error("OpenAI is not configured. Save an OpenAI API key in Integrations first.");
+  }
+
   if (bytes && file?.type && kind === "voice") {
-    const transcription = await primaryProvider.transcribeAudio({
+    const transcription = await mediaProvider.transcribeAudio({
       bytes,
       storagePath: file.name,
       mimeType: file.type
     });
     transcriptText = transcription.translatedText || transcription.originalText;
 
-    if (!transcriptText && openAIFallbackProvider) {
+    if (!transcriptText && providerMode === "auto" && openAIFallbackProvider) {
       const fallbackTranscription = await openAIFallbackProvider.transcribeAudio({
         bytes,
         storagePath: file.name,
@@ -162,7 +184,7 @@ async function extractMedia(request: Request) {
         mediaProviderName = "gemini";
         mediaModel = "gemini-2.5-flash";
         ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type });
-      } else if (openAIFallbackProvider && mediaProviderName !== "openai") {
+      } else if (providerMode === "auto" && openAIFallbackProvider && mediaProviderName !== "openai") {
         fallbackWarning = `${mediaProviderName} OCR failed: ${primaryMessage}. Used OpenAI fallback.`;
         mediaProvider = openAIFallbackProvider;
         mediaProviderName = "openai";
@@ -209,6 +231,7 @@ async function extractMedia(request: Request) {
     mediaKind: kind,
     provider: mediaProviderName,
     model: mediaModel,
+    providerMode,
     fallbackProvider: fallbackWarning ? mediaProviderName : "",
     transcriptText,
     ocrText,
