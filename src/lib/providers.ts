@@ -33,6 +33,7 @@ export interface ImageInput {
   mimeType: string;
   bytes?: ArrayBuffer;
   mediaUrl?: string;
+  language?: string;
 }
 
 export interface ExtractionInput {

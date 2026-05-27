@@ -89,12 +89,32 @@ function mediaProviderMode(value: FormDataEntryValue | null): MediaProviderMode 
   return normalized === "sarvam" || normalized === "openai" ? normalized : "auto";
 }
 
+function sarvamDocumentLanguage(value: FormDataEntryValue | null) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const languages: Record<string, string> = {
+    hindi: "hi-IN",
+    english: "en-IN",
+    kannada: "kn-IN",
+    marathi: "mr-IN",
+    tamil: "ta-IN",
+    telugu: "te-IN",
+    gujarati: "gu-IN",
+    bengali: "bn-IN",
+    malayalam: "ml-IN",
+    punjabi: "pa-IN",
+    urdu: "ur-IN"
+  };
+
+  return languages[normalized];
+}
+
 async function extractMedia(request: Request) {
   const formData = await request.formData();
   const fileInput = formData.get("file");
   const file = fileInput instanceof File && fileInput.size > 0 ? fileInput : null;
   const note = String(formData.get("note") ?? "").trim();
   const providerMode = mediaProviderMode(formData.get("providerMode"));
+  const documentLanguage = sarvamDocumentLanguage(formData.get("sarvamLanguage"));
   const bytes = file ? await file.arrayBuffer() : undefined;
   const kind = mediaKind(file?.type, Boolean(file));
   const providerSettings = await getConnectedAIProvider();
@@ -174,7 +194,7 @@ async function extractMedia(request: Request) {
     let ocr: { text: string; confidenceScore: number };
 
     try {
-      ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type });
+      ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type, language: documentLanguage });
     } catch (primaryError) {
       const primaryMessage = errorMessage(primaryError);
 
@@ -183,13 +203,13 @@ async function extractMedia(request: Request) {
         mediaProvider = geminiFallbackProvider;
         mediaProviderName = "gemini";
         mediaModel = "gemini-2.5-flash";
-        ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type });
+        ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type, language: documentLanguage });
       } else if (providerMode === "auto" && openAIFallbackProvider && mediaProviderName !== "openai") {
         fallbackWarning = `${mediaProviderName} OCR failed: ${primaryMessage}. Used OpenAI fallback.`;
         mediaProvider = openAIFallbackProvider;
         mediaProviderName = "openai";
         mediaModel = openAIConfig.model || process.env.OPENAI_MODEL || "gpt-5.4-mini";
-        ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type });
+        ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type, language: documentLanguage });
       } else {
         throw primaryError;
       }
@@ -203,7 +223,7 @@ async function extractMedia(request: Request) {
         : "";
 
     if (!imageClassification && mediaProvider.classifyImage) {
-      const classification = await mediaProvider.classifyImage({ bytes, storagePath: file.name, mimeType: file.type });
+      const classification = await mediaProvider.classifyImage({ bytes, storagePath: file.name, mimeType: file.type, language: documentLanguage });
       imageClassification = classification.label;
     }
   }
@@ -232,6 +252,7 @@ async function extractMedia(request: Request) {
     provider: mediaProviderName,
     model: mediaModel,
     providerMode,
+    documentLanguage: documentLanguage ?? "",
     fallbackProvider: fallbackWarning ? mediaProviderName : "",
     transcriptText,
     ocrText,

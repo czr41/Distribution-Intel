@@ -25,6 +25,7 @@ type MediaLabResult = {
   mediaKind: string;
   provider: string;
   providerMode: string;
+  documentLanguage?: string;
   model: string;
   fallbackProvider: string;
   transcriptText: string;
@@ -979,7 +980,15 @@ function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
             <label htmlFor="media-note">Optional field message</label>
             <textarea id="media-note" name="note" rows={6} placeholder="Example: Outlet Raj Stores, bill uploaded, payment pending 12400, ask Ramesh to follow up tomorrow." />
           </div>
-          <Select name="providerMode" label="Extraction provider" options={["Auto", "Sarvam", "OpenAI"]} defaultValue="Auto" />
+          <div className="form-grid two">
+            <Select name="providerMode" label="Extraction provider" options={["Auto", "Sarvam", "OpenAI"]} defaultValue="Auto" />
+            <Select
+              name="sarvamLanguage"
+              label="Sarvam document language"
+              options={["Default", "Hindi", "English", "Kannada", "Marathi", "Tamil", "Telugu", "Gujarati", "Bengali", "Malayalam", "Punjabi", "Urdu"]}
+              defaultValue="Hindi"
+            />
+          </div>
           {error && <p className="form-error">{error}</p>}
           <div className="action-row">
             <button className="approve" type="submit" disabled={isExtracting}>{isExtracting ? "Extracting..." : "Extract Text"}</button>
@@ -1006,6 +1015,7 @@ function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
               <Field label="File" value={result.fileName} />
               <Field label="Type" value={result.fileType} />
               <Field label="Selected mode" value={result.providerMode || "auto"} />
+              <Field label="Document language" value={result.documentLanguage || "Default"} />
               <Field label="Provider" value={result.provider} />
               <Field label="Fallback" value={result.fallbackProvider || "Not used"} />
               <Field label="Model" value={result.model} />

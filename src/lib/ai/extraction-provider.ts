@@ -24,7 +24,7 @@ type OpenAIMessage = {
     | string
     | Array<
         | { type: "text"; text: string }
-        | { type: "image_url"; image_url: { url: string } }
+        | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" } }
       >;
 };
 
@@ -33,6 +33,16 @@ type OpenAIChatResponse = {
     message?: {
       content?: string | Array<{ text?: string }>;
     };
+  }>;
+};
+
+type OpenAIResponsesResponse = {
+  output_text?: string;
+  output?: Array<{
+    content?: Array<{
+      text?: string;
+      type?: string;
+    }>;
   }>;
 };
 
@@ -368,6 +378,13 @@ function stripHtml(value: string) {
     .trim();
 }
 
+function cleanModelText(value: string) {
+  return value
+    .replace(/^```(?:json|txt|text)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+}
+
 function extractTextFromZip(buffer: Buffer) {
   const entries: Array<{ name: string; text: string }> = [];
   let offset = 0;
@@ -690,7 +707,7 @@ class SarvamExtractionProvider implements AIExtractionProvider {
         method: "POST",
         body: JSON.stringify({
           job_parameters: {
-            language: this.documentLanguage,
+            language: input.language || this.documentLanguage,
             output_format: "md"
           }
         })
@@ -742,6 +759,56 @@ class OpenAIExtractionProvider implements AIExtractionProvider {
 
   private get model() {
     return this.config.model || process.env.OPENAI_MODEL || "gpt-5.4-mini";
+  }
+
+  private get visionModel() {
+    return process.env.OPENAI_VISION_MODEL || (this.model.includes("mini") || this.model.includes("nano") ? "gpt-4.1" : this.model);
+  }
+
+  private extractResponseText(data: OpenAIResponsesResponse) {
+    return cleanModelText(
+      data.output_text ||
+        data.output
+          ?.flatMap((item) => item.content ?? [])
+          .map((part) => part.text ?? "")
+          .join("\n") ||
+        ""
+    );
+  }
+
+  private async generateVisionText(input: unknown) {
+    const apiKey = this.apiKey;
+    if (!apiKey) throw new Error("Missing OpenAI API key");
+
+    const response = await fetch(`${this.baseUrl}/responses`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: this.visionModel,
+        input,
+        max_output_tokens: 1800
+      })
+    });
+
+    if (!response.ok) {
+      const providerError = await response.text();
+      const normalizedProviderError = providerError.toLowerCase();
+
+      if (normalizedProviderError.includes("insufficient_quota")) {
+        throw new Error("OpenAI quota exceeded. Check billing, credits, or the API key configured in Integrations.");
+      }
+
+      if (normalizedProviderError.includes("invalid_api_key")) {
+        throw new Error("OpenAI API key is invalid. Replace the key in Integrations and try again.");
+      }
+
+      throw new Error(`OpenAI vision extraction failed: ${response.status} ${providerError}`);
+    }
+
+    return this.extractResponseText((await response.json()) as OpenAIResponsesResponse);
   }
 
   private async generateJson(messages: OpenAIMessage[]) {
@@ -846,27 +913,50 @@ class OpenAIExtractionProvider implements AIExtractionProvider {
     if (!bytes || !input.mimeType.startsWith("image/")) return { text: "", confidenceScore: 0.2 };
 
     const dataUrl = `data:${input.mimeType};base64,${await arrayBufferToBase64(bytes)}`;
-    const result = (await this.generateJson([
-      {
-        role: "system",
-        content: "You extract text from Indian field-sales evidence. Return JSON only."
-      },
+    const prompt =
+      "Extract every visible text element from this image. Preserve line breaks and reading order. " +
+      "Include Hindi/Devanagari and other Indian-language text exactly as seen. Include English text, numbers, amounts, dates, names, SKU labels, and handwritten text if visible. " +
+      "Do not summarize. Do not translate. Return plain text only.";
+
+    try {
+      const text = await this.generateVisionText([
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: prompt },
+            { type: "input_image", image_url: dataUrl, detail: "high" }
+          ]
+        }
+      ]);
+
+      return {
+        text,
+        confidenceScore: text ? 0.88 : 0.25
+      };
+    } catch (responseError) {
+      const result = (await this.generateJson([
+        {
+          role: "system",
+          content: "You extract text from Indian field-sales evidence. Return JSON only."
+        },
       {
         role: "user",
         content: [
           {
             type: "text",
-            text: 'Read this image carefully. Return {"text":"all visible text, amounts, dates, outlet names, SKU names, payment details","is_bill_or_invoice":true|false,"confidence":0.0}.'
+              text:
+                'Read this image carefully. Extract every visible text element, preserving line breaks and reading order. Return {"text":"all visible text exactly as seen, including Indian-language scripts, English, numbers, amounts, dates, outlet names, SKU names, payment details","is_bill_or_invoice":true|false,"confidence":0.0}.'
           },
-          { type: "image_url", image_url: { url: dataUrl } }
+            { type: "image_url", image_url: { url: dataUrl, detail: "high" } }
         ]
       }
-    ])) as { text?: string; confidence?: number };
+      ])) as { text?: string; confidence?: number };
 
-    return {
-      text: result.text ?? "",
-      confidenceScore: typeof result.confidence === "number" ? result.confidence : 0.82
-    };
+      return {
+        text: result.text ?? "",
+        confidenceScore: typeof result.confidence === "number" ? result.confidence : responseError ? 0.78 : 0.82
+      };
+    }
   }
 
   async classifyImage(input: ImageInput): Promise<ImageClassificationResult> {

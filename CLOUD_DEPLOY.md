@@ -46,6 +46,7 @@ SARVAM_SPEECH_MODE
 SARVAM_SPEECH_LANGUAGE
 OPENAI_API_KEY
 OPENAI_MODEL
+OPENAI_VISION_MODEL
 OPENAI_TRANSCRIPTION_MODEL
 GEMINI_API_KEY
 WHATSAPP_PROVIDER
@@ -58,6 +59,8 @@ Use `.env.example` as the template.
 `SARVAM_VISION_LANGUAGE` is optional. It defaults to `en-IN` for bill and document OCR. Set it to a Sarvam-supported BCP-47 code such as `hi-IN`, `kn-IN`, `ta-IN`, or `mr-IN` when processing regional-language documents.
 
 `SARVAM_SPEECH_MODE` is optional and defaults to `translate`, which returns English text from Indian-language voice notes. Use `transcribe`, `codemix`, `translit`, or `verbatim` if the operations team wants source-language text instead. `SARVAM_SPEECH_LANGUAGE` defaults to `unknown` so Sarvam can auto-detect the spoken language.
+
+`OPENAI_VISION_MODEL` is optional. It lets image OCR use a stronger multimodal model through the Responses API while keeping `OPENAI_MODEL` for structured text extraction.
 
 ## 3. Vercel
 
