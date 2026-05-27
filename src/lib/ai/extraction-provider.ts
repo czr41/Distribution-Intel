@@ -580,7 +580,7 @@ class SarvamExtractionProvider implements AIExtractionProvider {
         body: JSON.stringify({
           job_parameters: {
             language: this.documentLanguage,
-            output_format: "json"
+            output_format: "md"
           }
         })
       }
