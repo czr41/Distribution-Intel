@@ -330,6 +330,38 @@ function collectDocumentText(value: unknown, lines: string[] = [], depth = 0) {
   return lines;
 }
 
+function uniqueNonEmptyLines(values: string[]) {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+
+  values
+    .flatMap((value) => value.split(/\r?\n/))
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const key = line.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        lines.push(line);
+      }
+    });
+
+  return lines.join("\n").trim();
+}
+
+function stripHtml(value: string) {
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function extractTextFromZip(buffer: Buffer) {
   const entries: Array<{ name: string; text: string }> = [];
   let offset = 0;
@@ -368,18 +400,20 @@ function extractTextFromZip(buffer: Buffer) {
     offset = dataEnd;
   }
 
-  const preferred = entries.find((entry) => entry.name.toLowerCase().endsWith(".md")) ?? entries.find((entry) => entry.name.toLowerCase().endsWith(".json")) ?? entries[0];
-  if (!preferred) return "";
+  const jsonText = entries
+    .filter((entry) => entry.name.toLowerCase().endsWith(".json"))
+    .map((entry) => {
+      try {
+        return collectDocumentText(JSON.parse(entry.text) as unknown).join("\n").trim();
+      } catch {
+        return entry.text;
+      }
+    });
+  const markdownText = entries.filter((entry) => entry.name.toLowerCase().endsWith(".md")).map((entry) => entry.text);
+  const textOutput = entries.filter((entry) => entry.name.toLowerCase().endsWith(".txt")).map((entry) => entry.text);
+  const htmlText = entries.filter((entry) => entry.name.toLowerCase().endsWith(".html")).map((entry) => stripHtml(entry.text));
 
-  if (preferred.name.toLowerCase().endsWith(".json")) {
-    try {
-      return collectDocumentText(JSON.parse(preferred.text) as unknown).join("\n").trim() || preferred.text;
-    } catch {
-      return preferred.text;
-    }
-  }
-
-  return preferred.text;
+  return uniqueNonEmptyLines([...jsonText, ...markdownText, ...textOutput, ...htmlText]);
 }
 
 class GeminiExtractionProvider implements AIExtractionProvider {
@@ -479,6 +513,15 @@ class SarvamExtractionProvider implements AIExtractionProvider {
 
   private get documentLanguage() {
     return process.env.SARVAM_VISION_LANGUAGE || "en-IN";
+  }
+
+  private get speechMode() {
+    const mode = process.env.SARVAM_SPEECH_MODE || "translate";
+    return ["transcribe", "translate", "verbatim", "translit", "codemix"].includes(mode) ? mode : "translate";
+  }
+
+  private get speechLanguage() {
+    return process.env.SARVAM_SPEECH_LANGUAGE || "unknown";
   }
 
   private async uploadDocument(input: { bytes: Buffer; fileName: string; mimeType: string; jobId: string; apiKey: string }) {
@@ -584,9 +627,13 @@ class SarvamExtractionProvider implements AIExtractionProvider {
     }
 
     const formData = new FormData();
+    const model = this.config.model || "saaras:v3";
     formData.append("file", new Blob([bytes], { type: input.mimeType }), `voice-note.${input.mimeType.split("/")[1] ?? "bin"}`);
-    formData.append("model", this.config.model || "saaras:v3");
-    formData.append("with_timestamps", "false");
+    formData.append("model", model);
+    formData.append("language_code", this.speechLanguage);
+    if (model === "saaras:v3") {
+      formData.append("mode", this.speechMode);
+    }
 
     const response = await fetch(`${this.baseUrl}/speech-to-text`, {
       method: "POST",
@@ -608,7 +655,7 @@ class SarvamExtractionProvider implements AIExtractionProvider {
     return {
       originalText: text,
       detectedLanguage: language,
-      translatedText: data?.translated_text ?? text,
+      translatedText: this.speechMode === "translate" ? text : data?.translated_text ?? text,
       confidenceScore: confidence
     };
   }
