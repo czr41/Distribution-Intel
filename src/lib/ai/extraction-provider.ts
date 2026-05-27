@@ -317,6 +317,7 @@ class OpenAIExtractionProvider implements AIExtractionProvider {
 
     if (!response.ok) {
       const firstError = await response.text();
+      let lastError = firstError;
       const normalizedError = firstError.toLowerCase();
       const fallbackBodies: unknown[] = [];
 
@@ -332,9 +333,10 @@ class OpenAIExtractionProvider implements AIExtractionProvider {
       for (const fallbackBody of fallbackBodies) {
         response = await requestChat(fallbackBody);
         if (response.ok) break;
+        lastError = await response.text();
       }
 
-      if (!response.ok) throw new Error(`OpenAI extraction failed: ${response.status} ${await response.text() || firstError}`);
+      if (!response.ok) throw new Error(`OpenAI extraction failed: ${response.status} ${lastError || firstError}`);
     }
 
     const data = (await response.json()) as OpenAIChatResponse;
