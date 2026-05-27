@@ -9,6 +9,7 @@ import {
   createOrderAction,
   createBillAction,
   saveAIProviderAction,
+  saveOpenAIIntegrationAction,
   saveMetaIntegrationAction,
   updateBrandAction,
   updateOutletAction,
@@ -60,6 +61,16 @@ export default async function Home() {
       lastError: "",
       updatedAt: "--"
     },
+    openAIIntegration: {
+      status: "Draft" as const,
+      model: "gpt-5.4-mini",
+      transcriptionModel: "gpt-4o-mini-transcribe",
+      baseUrl: "https://api.openai.com/v1",
+      hasApiKey: false,
+      lastTestStatus: "Not configured",
+      lastError: "",
+      updatedAt: "--"
+    },
     setupError: error instanceof Error ? error.message : "Unable to load Supabase data"
   }));
 
@@ -84,7 +95,8 @@ export default async function Home() {
         updateOrder: updateOrderAction,
         updateBill: updateBillAction,
         saveMetaIntegration: saveMetaIntegrationAction,
-        saveAIProvider: saveAIProviderAction
+        saveAIProvider: saveAIProviderAction,
+        saveOpenAIIntegration: saveOpenAIIntegrationAction
       }}
     />
   );

@@ -9,6 +9,7 @@ import type {
   CommandCenterData,
   CommandRecord,
   MetaIntegrationSettings,
+  OpenAIIntegrationSettings,
   OrderRow,
   OutletRow,
   PaymentRow,
@@ -69,7 +70,15 @@ type CommandCenterActions = {
   updateBill: (formData: FormData) => Promise<BillRow>;
   saveMetaIntegration: (formData: FormData) => Promise<void>;
   saveAIProvider: (formData: FormData) => Promise<void>;
+  saveOpenAIIntegration: (formData: FormData) => Promise<void>;
 };
+
+const openAIModelOptions = ["gpt-5.5", "gpt-5.5-pro", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-4.1-mini", "gpt-4.1-nano"];
+const openAITranscriptionModelOptions = ["gpt-4o-mini-transcribe", "gpt-4o-transcribe"];
+
+function withSelectedOption(options: string[], selected: string) {
+  return selected && !options.includes(selected) ? [selected, ...options] : options;
+}
 
 const viewTitles: Record<View, string> = {
   command: "Command Center",
@@ -203,6 +212,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const [bills, setBills] = useState<BillRow[]>(initialData.bills);
   const [metaIntegration, setMetaIntegration] = useState<MetaIntegrationSettings>(initialData.metaIntegration);
   const [aiProvider, setAIProvider] = useState<AIProviderSettings>(initialData.aiProvider);
+  const [openAIIntegration, setOpenAIIntegration] = useState<OpenAIIntegrationSettings>(initialData.openAIIntegration);
   const [tasks, setTasks] = useState<TaskRow[]>(initialData.tasks);
   const [modalType, setModalType] = useState<ModalType>(null);
   const [editingItem, setEditingItem] = useState<EditableMasterData | null>(null);
@@ -385,6 +395,25 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       baseUrl: value("baseUrl"),
       hasApiKey: Boolean(value("apiKey")) || current.hasApiKey,
       extractionMode: value("extractionMode") as AIProviderSettings["extractionMode"],
+      lastTestStatus: "Configuration saved",
+      lastError: "",
+      updatedAt: new Date().toLocaleString("en-IN")
+    }));
+  }
+
+  async function saveOpenAIIntegration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const value = (key: string) => String(form.get(key) ?? "").trim();
+
+    await actions.saveOpenAIIntegration(form);
+    setOpenAIIntegration((current) => ({
+      ...current,
+      model: value("model"),
+      transcriptionModel: value("transcriptionModel"),
+      baseUrl: value("baseUrl") || "https://api.openai.com/v1",
+      status: value("status") as OpenAIIntegrationSettings["status"],
+      hasApiKey: Boolean(value("apiKey")) || current.hasApiKey,
       lastTestStatus: "Configuration saved",
       lastError: "",
       updatedAt: new Date().toLocaleString("en-IN")
@@ -716,8 +745,10 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           <IntegrationsView
             metaIntegration={metaIntegration}
             aiProvider={aiProvider}
+            openAIIntegration={openAIIntegration}
             onSaveMeta={saveMetaIntegration}
             onSaveAI={saveAIProvider}
+            onSaveOpenAI={saveOpenAIIntegration}
           />
         )}
       </main>
@@ -1323,13 +1354,17 @@ function ReportsView() {
 function IntegrationsView({
   metaIntegration,
   aiProvider,
+  openAIIntegration,
   onSaveMeta,
-  onSaveAI
+  onSaveAI,
+  onSaveOpenAI
 }: {
   metaIntegration: MetaIntegrationSettings;
   aiProvider: AIProviderSettings;
+  openAIIntegration: OpenAIIntegrationSettings;
   onSaveMeta: (event: FormEvent<HTMLFormElement>) => void;
   onSaveAI: (event: FormEvent<HTMLFormElement>) => void;
+  onSaveOpenAI: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
     <section className="integrations-grid">
@@ -1395,6 +1430,38 @@ function IntegrationsView({
           </div>
           <div className="action-row">
             <button className="approve" type="submit">Save AI Provider</button>
+          </div>
+        </form>
+      </article>
+
+      <article className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>OpenAI Fallback</h2>
+            <p>Use OpenAI when Sarvam does not cover OCR, image understanding, structured extraction, or audio fallback.</p>
+          </div>
+          <span className={`tag ${openAIIntegration.status === "Connected" ? "blue" : "warn"}`}>{openAIIntegration.status}</span>
+        </div>
+        <div className="integration-summary">
+          <Field label="Text / vision model" value={openAIIntegration.model} />
+          <Field label="Audio model" value={openAIIntegration.transcriptionModel} />
+          <Field label="API key saved" value={openAIIntegration.hasApiKey ? "Yes" : "No"} />
+          <Field label="Last status" value={openAIIntegration.lastTestStatus} />
+        </div>
+        <form className="master-form" onSubmit={onSaveOpenAI}>
+          <div className="form-grid">
+            <Select name="model" label="Text, OCR, and vision model" options={withSelectedOption(openAIModelOptions, openAIIntegration.model)} defaultValue={openAIIntegration.model} />
+            <Select name="transcriptionModel" label="Audio transcription model" options={withSelectedOption(openAITranscriptionModelOptions, openAIIntegration.transcriptionModel)} defaultValue={openAIIntegration.transcriptionModel} />
+            <Input name="baseUrl" label="Base URL" defaultValue={openAIIntegration.baseUrl} placeholder="https://api.openai.com/v1" required={false} />
+            <Select name="status" label="Status" options={["Draft", "Connected", "Disabled"]} defaultValue={openAIIntegration.status} />
+            <Input name="apiKey" label="OpenAI API key" type="password" placeholder={openAIIntegration.hasApiKey ? "Saved. Enter only to replace." : "Paste OpenAI API key"} required={!openAIIntegration.hasApiKey} />
+          </div>
+          <div className="module-list">
+            <article className="module-card"><h3>Fallback path</h3><p>Sarvam remains first for Indian-language voice; OpenAI fills gaps for images, OCR, and structured drafts.</p></article>
+            <article className="module-card"><h3>Model control</h3><p>Change the text and transcription models independently as cost, speed, or accuracy needs change.</p></article>
+          </div>
+          <div className="action-row">
+            <button className="approve" type="submit">Save OpenAI Fallback</button>
           </div>
         </form>
       </article>

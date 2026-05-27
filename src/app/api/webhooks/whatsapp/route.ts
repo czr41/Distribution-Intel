@@ -19,6 +19,15 @@ type AIProviderRow = {
   model: string;
   api_key: string | null;
   base_url: string | null;
+  config_json: unknown;
+};
+
+type OpenAIFallbackConfig = {
+  status?: string;
+  model?: string;
+  transcriptionModel?: string;
+  baseUrl?: string;
+  apiKey?: string;
 };
 
 export const dynamic = "force-dynamic";
@@ -43,6 +52,13 @@ function toIncomingMessage(rowId: string, message: NormalizedIncomingMessage, me
     createdAt: now,
     updatedAt: now
   };
+}
+
+function getOpenAIFallbackConfig(config: unknown): OpenAIFallbackConfig {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return {};
+  const openAI = (config as { openaiFallback?: unknown }).openaiFallback;
+  if (!openAI || typeof openAI !== "object" || Array.isArray(openAI)) return {};
+  return openAI as OpenAIFallbackConfig;
 }
 
 export async function GET(request: Request) {
@@ -99,13 +115,14 @@ export async function POST(request: Request) {
 
   const { data: aiSettings } = await supabase
     .from("ai_provider_settings")
-    .select("provider,model,api_key,base_url")
+    .select("provider,model,api_key,base_url,config_json")
     .eq("status", "connected")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   const aiSettingsRow = aiSettings as AIProviderRow | null;
+  const openAIConfig = getOpenAIFallbackConfig(aiSettingsRow?.config_json);
   const aiProvider = createAIExtractionProvider(
     aiSettingsRow
       ? {
@@ -116,12 +133,14 @@ export async function POST(request: Request) {
         }
       : null
   );
-  const openAIFallbackProvider = process.env.OPENAI_API_KEY
+  const openAIAvailable = openAIConfig.status !== "Disabled" && Boolean(openAIConfig.apiKey || process.env.OPENAI_API_KEY);
+  const openAIFallbackProvider = openAIAvailable
     ? createAIExtractionProvider({
         provider: "openai",
-        model: process.env.OPENAI_MODEL || "gpt-5.4-mini",
-        apiKey: process.env.OPENAI_API_KEY,
-        baseUrl: null
+        model: openAIConfig.model || process.env.OPENAI_MODEL || "gpt-5.4-mini",
+        transcriptionModel: openAIConfig.transcriptionModel || process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe",
+        apiKey: openAIConfig.apiKey || process.env.OPENAI_API_KEY,
+        baseUrl: openAIConfig.baseUrl || null
       })
     : null;
 

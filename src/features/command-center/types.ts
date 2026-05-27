@@ -125,6 +125,17 @@ export type AIProviderSettings = {
   updatedAt: string;
 };
 
+export type OpenAIIntegrationSettings = {
+  status: "Connected" | "Draft" | "Disabled";
+  model: string;
+  transcriptionModel: string;
+  baseUrl: string;
+  hasApiKey: boolean;
+  lastTestStatus: string;
+  lastError: string;
+  updatedAt: string;
+};
+
 export type CommandCenterData = {
   records: CommandRecord[];
   brands: BrandOption[];
@@ -137,5 +148,6 @@ export type CommandCenterData = {
   bills: BillRow[];
   metaIntegration: MetaIntegrationSettings;
   aiProvider: AIProviderSettings;
+  openAIIntegration: OpenAIIntegrationSettings;
   setupError?: string;
 };

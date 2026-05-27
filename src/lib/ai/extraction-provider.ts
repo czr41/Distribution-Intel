@@ -12,6 +12,7 @@ import type {
 type ProviderConfig = {
   provider: "gemini" | "sarvam" | "openai" | "ollama_gemma" | "manual";
   model: string;
+  transcriptionModel?: string | null;
   apiKey?: string | null;
   baseUrl?: string | null;
 };
@@ -330,7 +331,7 @@ class OpenAIExtractionProvider implements AIExtractionProvider {
 
     const formData = new FormData();
     formData.append("file", new Blob([bytes], { type: input.mimeType }), `voice-note.${input.mimeType.split("/")[1] ?? "bin"}`);
-    formData.append("model", process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe");
+    formData.append("model", this.config.transcriptionModel || process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe");
     formData.append("response_format", "json");
 
     const response = await fetch(`${this.baseUrl}/audio/transcriptions`, {

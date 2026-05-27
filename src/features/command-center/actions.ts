@@ -152,12 +152,24 @@ const aiProviderSchema = z.object({
   status: z.enum(["Connected", "Draft", "Disabled"])
 });
 
+const openAIIntegrationSchema = z.object({
+  model: z.string().min(1),
+  transcriptionModel: z.string().min(1),
+  baseUrl: z.string().optional(),
+  apiKey: z.string().optional(),
+  status: z.enum(["Connected", "Draft", "Disabled"])
+});
+
 function formValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
 function formId(formData: FormData) {
   return z.string().uuid().parse(formValue(formData, "id"));
+}
+
+function objectJson(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
 }
 
 function brandStatus(status?: string | null): BrandOption["status"] {
@@ -1037,6 +1049,63 @@ export async function saveAIProviderAction(formData: FormData) {
   const { error } = existing?.id
     ? await supabase.from("ai_provider_settings").update(payload).eq("id", existing.id)
     : await supabase.from("ai_provider_settings").insert(payload);
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+}
+
+export async function saveOpenAIIntegrationAction(formData: FormData) {
+  const input = openAIIntegrationSchema.parse({
+    model: formValue(formData, "model"),
+    transcriptionModel: formValue(formData, "transcriptionModel"),
+    baseUrl: formValue(formData, "baseUrl"),
+    apiKey: formValue(formData, "apiKey"),
+    status: formValue(formData, "status")
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("ai_provider_settings")
+    .select("id,config_json")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) throw new Error(existingError.message);
+
+  const currentConfig = objectJson(existing?.config_json);
+  const currentOpenAI = objectJson(currentConfig.openaiFallback);
+  const openaiFallback = {
+    ...currentOpenAI,
+    status: input.status,
+    model: input.model,
+    transcriptionModel: input.transcriptionModel,
+    baseUrl: input.baseUrl || "https://api.openai.com/v1",
+    apiKey: input.apiKey || currentOpenAI.apiKey || null,
+    lastTestStatus: "Configuration saved",
+    lastError: null,
+    updatedAt: new Date().toISOString()
+  };
+
+  const payload = {
+    config_json: {
+      ...currentConfig,
+      openaiFallback
+    },
+    last_test_status: "OpenAI fallback configuration saved",
+    last_error: null,
+    updated_at: new Date().toISOString()
+  };
+
+  const { error } = existing?.id
+    ? await supabase.from("ai_provider_settings").update(payload).eq("id", existing.id)
+    : await supabase.from("ai_provider_settings").insert({
+        provider: "sarvam",
+        model: "saaras:v3",
+        status: "draft",
+        extraction_mode: "structured_json",
+        ...payload
+      });
 
   if (error) throw new Error(error.message);
   revalidatePath("/");

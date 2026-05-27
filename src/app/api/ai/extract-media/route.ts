@@ -8,6 +8,15 @@ type AIProviderRow = {
   model: string;
   api_key: string | null;
   base_url: string | null;
+  config_json: unknown;
+};
+
+type OpenAIFallbackConfig = {
+  status?: string;
+  model?: string;
+  transcriptionModel?: string;
+  baseUrl?: string;
+  apiKey?: string;
 };
 
 export const dynamic = "force-dynamic";
@@ -51,7 +60,7 @@ async function getConnectedAIProvider() {
     const supabase = createSupabaseReadClient();
     const { data } = await supabase
       .from("ai_provider_settings")
-      .select("provider,model,api_key,base_url")
+      .select("provider,model,api_key,base_url,config_json")
       .eq("status", "connected")
       .order("created_at", { ascending: false })
       .limit(1)
@@ -63,6 +72,13 @@ async function getConnectedAIProvider() {
   }
 }
 
+function getOpenAIFallbackConfig(config: unknown): OpenAIFallbackConfig {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return {};
+  const openAI = (config as { openaiFallback?: unknown }).openaiFallback;
+  if (!openAI || typeof openAI !== "object" || Array.isArray(openAI)) return {};
+  return openAI as OpenAIFallbackConfig;
+}
+
 export async function POST(request: Request) {
   const formData = await request.formData();
   const fileInput = formData.get("file");
@@ -71,6 +87,7 @@ export async function POST(request: Request) {
   const bytes = file ? await file.arrayBuffer() : undefined;
   const kind = mediaKind(file?.type, Boolean(file));
   const providerSettings = await getConnectedAIProvider();
+  const openAIConfig = getOpenAIFallbackConfig(providerSettings?.config_json);
   const primaryProvider = createAIExtractionProvider(
     providerSettings
       ? {
@@ -81,12 +98,14 @@ export async function POST(request: Request) {
         }
       : null
   );
-  const openAIFallbackProvider = process.env.OPENAI_API_KEY
+  const openAIAvailable = openAIConfig.status !== "Disabled" && Boolean(openAIConfig.apiKey || process.env.OPENAI_API_KEY);
+  const openAIFallbackProvider = openAIAvailable
     ? createAIExtractionProvider({
         provider: "openai",
-        model: process.env.OPENAI_MODEL || "gpt-5.4-mini",
-        apiKey: process.env.OPENAI_API_KEY,
-        baseUrl: null
+        model: openAIConfig.model || process.env.OPENAI_MODEL || "gpt-5.4-mini",
+        transcriptionModel: openAIConfig.transcriptionModel || process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe",
+        apiKey: openAIConfig.apiKey || process.env.OPENAI_API_KEY,
+        baseUrl: openAIConfig.baseUrl || null
       })
     : null;
   let mediaProvider = primaryProvider;

@@ -6,6 +6,7 @@ import type {
   CommandCenterData,
   CommandRecord,
   MetaIntegrationSettings,
+  OpenAIIntegrationSettings,
   OrderRow,
   OutletRow,
   PaymentRow,
@@ -114,6 +115,7 @@ type AIProviderSettingsResult = {
   base_url: string | null;
   api_key: string | null;
   extraction_mode: string | null;
+  config_json: unknown;
   last_test_status: string | null;
   last_error: string | null;
   updated_at: string | null;
@@ -181,6 +183,11 @@ function displayConnectionStatus(status?: string | null): "Connected" | "Draft" 
   return "Draft";
 }
 
+function displayOpenAIStatus(status?: string | null): "Connected" | "Draft" | "Disabled" {
+  if (status === "Connected" || status === "Draft" || status === "Disabled") return status;
+  return displayConnectionStatus(status);
+}
+
 function defaultMetaIntegration(): MetaIntegrationSettings {
   return {
     displayName: "Meta WhatsApp Cloud API",
@@ -211,6 +218,27 @@ function defaultAIProvider(): AIProviderSettings {
     lastError: "",
     updatedAt: "--"
   };
+}
+
+function defaultOpenAIIntegration(): OpenAIIntegrationSettings {
+  return {
+    status: "Draft",
+    model: "gpt-5.4-mini",
+    transcriptionModel: "gpt-4o-mini-transcribe",
+    baseUrl: "https://api.openai.com/v1",
+    hasApiKey: false,
+    lastTestStatus: "Not configured",
+    lastError: "",
+    updatedAt: "--"
+  };
+}
+
+function openAIConfigFromJson(config: unknown): Partial<OpenAIIntegrationSettings> & { apiKey?: string } {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return {};
+  const openAI = (config as { openaiFallback?: unknown }).openaiFallback;
+  if (!openAI || typeof openAI !== "object" || Array.isArray(openAI)) return {};
+
+  return openAI as Partial<OpenAIIntegrationSettings> & { apiKey?: string };
 }
 
 export async function getCommandCenterData(): Promise<CommandCenterData> {
@@ -261,7 +289,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       .maybeSingle(),
     supabase
       .from("ai_provider_settings")
-      .select("id,provider,model,status,base_url,api_key,extraction_mode,last_test_status,last_error,updated_at")
+      .select("id,provider,model,status,base_url,api_key,extraction_mode,config_json,last_test_status,last_error,updated_at")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -426,6 +454,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     : defaultMetaIntegration();
 
   const aiRow = aiProviderResult.data as AIProviderSettingsResult | null;
+  const openAIConfig = openAIConfigFromJson(aiRow?.config_json);
   const aiProvider: AIProviderSettings = aiRow
     ? {
         id: aiRow.id,
@@ -440,6 +469,23 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
         updatedAt: aiRow.updated_at ?? "--"
       }
     : defaultAIProvider();
+  const openAIDefaults = defaultOpenAIIntegration();
+  const openAIIntegration: OpenAIIntegrationSettings = {
+    status: displayOpenAIStatus(openAIConfig.status),
+    model: typeof openAIConfig.model === "string" && openAIConfig.model ? openAIConfig.model : openAIDefaults.model,
+    transcriptionModel:
+      typeof openAIConfig.transcriptionModel === "string" && openAIConfig.transcriptionModel
+        ? openAIConfig.transcriptionModel
+        : openAIDefaults.transcriptionModel,
+    baseUrl: typeof openAIConfig.baseUrl === "string" && openAIConfig.baseUrl ? openAIConfig.baseUrl : openAIDefaults.baseUrl,
+    hasApiKey: Boolean(openAIConfig.apiKey || process.env.OPENAI_API_KEY),
+    lastTestStatus:
+      typeof openAIConfig.lastTestStatus === "string" && openAIConfig.lastTestStatus
+        ? openAIConfig.lastTestStatus
+        : openAIDefaults.lastTestStatus,
+    lastError: typeof openAIConfig.lastError === "string" ? openAIConfig.lastError : "",
+    updatedAt: typeof openAIConfig.updatedAt === "string" && openAIConfig.updatedAt ? openAIConfig.updatedAt : openAIDefaults.updatedAt
+  };
 
-  return { records, brands, outlets, salesmen, tasks, territories, payments, orders, bills, metaIntegration, aiProvider };
+  return { records, brands, outlets, salesmen, tasks, territories, payments, orders, bills, metaIntegration, aiProvider, openAIIntegration };
 }
