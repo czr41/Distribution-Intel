@@ -336,7 +336,18 @@ class OpenAIExtractionProvider implements AIExtractionProvider {
         lastError = await response.text();
       }
 
-      if (!response.ok) throw new Error(`OpenAI extraction failed: ${response.status} ${lastError || firstError}`);
+      const providerError = lastError || firstError;
+      const normalizedProviderError = providerError.toLowerCase();
+
+      if (!response.ok && normalizedProviderError.includes("insufficient_quota")) {
+        throw new Error("OpenAI quota exceeded. Check billing, credits, or the API key configured in Integrations.");
+      }
+
+      if (!response.ok && normalizedProviderError.includes("invalid_api_key")) {
+        throw new Error("OpenAI API key is invalid. Replace the key in Integrations and try again.");
+      }
+
+      if (!response.ok) throw new Error(`OpenAI extraction failed: ${response.status} ${providerError}`);
     }
 
     const data = (await response.json()) as OpenAIChatResponse;
