@@ -144,7 +144,7 @@ const metaIntegrationSchema = z.object({
 });
 
 const aiProviderSchema = z.object({
-  provider: z.enum(["gemini", "sarvam", "ollama_gemma", "manual"]),
+  provider: z.enum(["gemini", "sarvam", "openai", "ollama_gemma", "manual"]),
   model: z.string().min(1),
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),

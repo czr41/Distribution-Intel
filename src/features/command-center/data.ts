@@ -429,8 +429,8 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   const aiProvider: AIProviderSettings = aiRow
     ? {
         id: aiRow.id,
-        provider: aiRow.provider === "sarvam" || aiRow.provider === "ollama_gemma" || aiRow.provider === "manual" ? aiRow.provider : "gemini",
-        model: aiRow.model ?? (aiRow.provider === "sarvam" ? "saaras:v3" : "gemini-2.5-flash"),
+        provider: aiRow.provider === "sarvam" || aiRow.provider === "openai" || aiRow.provider === "ollama_gemma" || aiRow.provider === "manual" ? aiRow.provider : "gemini",
+        model: aiRow.model ?? (aiRow.provider === "sarvam" ? "saaras:v3" : aiRow.provider === "openai" ? "gpt-5.4-mini" : "gemini-2.5-flash"),
         status: displayConnectionStatus(aiRow.status),
         baseUrl: aiRow.base_url ?? "",
         hasApiKey: Boolean(aiRow.api_key),

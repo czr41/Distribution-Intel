@@ -15,7 +15,7 @@ type IntegrationRow = {
 };
 
 type AIProviderRow = {
-  provider: "gemini" | "sarvam" | "ollama_gemma" | "manual";
+  provider: "gemini" | "sarvam" | "openai" | "ollama_gemma" | "manual";
   model: string;
   api_key: string | null;
   base_url: string | null;
@@ -116,6 +116,14 @@ export async function POST(request: Request) {
         }
       : null
   );
+  const openAIFallbackProvider = process.env.OPENAI_API_KEY
+    ? createAIExtractionProvider({
+        provider: "openai",
+        model: process.env.OPENAI_MODEL || "gpt-5.4-mini",
+        apiKey: process.env.OPENAI_API_KEY,
+        baseUrl: null
+      })
+    : null;
 
   for (const message of messages) {
     const { data: incoming, error: incomingError } = await supabase
@@ -183,16 +191,26 @@ export async function POST(request: Request) {
           mimeType: mediaMimeType
         });
         transcriptText = transcription.originalText || transcription.translatedText;
+
+        if (!transcriptText && openAIFallbackProvider) {
+          const fallbackTranscription = await openAIFallbackProvider.transcribeAudio({
+            bytes: mediaBytes,
+            storagePath: mediaStoragePath,
+            mimeType: mediaMimeType
+          });
+          transcriptText = fallbackTranscription.originalText || fallbackTranscription.translatedText;
+        }
       }
 
       if (message.messageType === "image" || message.messageType === "document") {
+        const visualProvider = aiSettingsRow?.provider === "sarvam" && openAIFallbackProvider ? openAIFallbackProvider : aiProvider;
         const [ocr, classification] = await Promise.all([
-          aiProvider.runOCR({
+          visualProvider.runOCR({
             bytes: mediaBytes,
             storagePath: mediaStoragePath,
             mimeType: mediaMimeType
           }),
-          aiProvider.classifyImage?.({
+          visualProvider.classifyImage?.({
             bytes: mediaBytes,
             storagePath: mediaStoragePath,
             mimeType: mediaMimeType

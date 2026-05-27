@@ -114,7 +114,7 @@ export type MetaIntegrationSettings = {
 
 export type AIProviderSettings = {
   id?: string;
-  provider: "gemini" | "sarvam" | "ollama_gemma" | "manual";
+  provider: "gemini" | "sarvam" | "openai" | "ollama_gemma" | "manual";
   model: string;
   status: "Connected" | "Draft" | "Disabled";
   baseUrl: string;

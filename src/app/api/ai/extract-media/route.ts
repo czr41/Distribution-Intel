@@ -4,7 +4,7 @@ import { createAIExtractionProvider } from "@/lib/ai/extraction-provider";
 import { createSupabaseReadClient } from "@/lib/supabase/admin";
 
 type AIProviderRow = {
-  provider: "gemini" | "sarvam" | "ollama_gemma" | "manual";
+  provider: "gemini" | "sarvam" | "openai" | "ollama_gemma" | "manual";
   model: string;
   api_key: string | null;
   base_url: string | null;
@@ -65,7 +65,8 @@ async function getConnectedAIProvider() {
 
 export async function POST(request: Request) {
   const formData = await request.formData();
-  const file = formData.get("file") instanceof File ? (formData.get("file") as File) : null;
+  const fileInput = formData.get("file");
+  const file = fileInput instanceof File && fileInput.size > 0 ? fileInput : null;
   const note = String(formData.get("note") ?? "").trim();
   const bytes = file ? await file.arrayBuffer() : undefined;
   const kind = mediaKind(file?.type, Boolean(file));
@@ -80,15 +81,25 @@ export async function POST(request: Request) {
         }
       : null
   );
-  const mediaProvider =
-    (kind === "image" || kind === "document") && providerSettings?.provider === "sarvam" && process.env.GEMINI_API_KEY
-      ? createAIExtractionProvider({
-          provider: "gemini",
-          model: "gemini-2.5-flash",
-          apiKey: process.env.GEMINI_API_KEY,
-          baseUrl: null
-        })
-      : primaryProvider;
+  const openAIFallbackProvider = process.env.OPENAI_API_KEY
+    ? createAIExtractionProvider({
+        provider: "openai",
+        model: process.env.OPENAI_MODEL || "gpt-5.4-mini",
+        apiKey: process.env.OPENAI_API_KEY,
+        baseUrl: null
+      })
+    : null;
+  let mediaProvider = primaryProvider;
+  if ((kind === "image" || kind === "document") && providerSettings?.provider === "sarvam" && openAIFallbackProvider) {
+    mediaProvider = openAIFallbackProvider;
+  } else if ((kind === "image" || kind === "document") && providerSettings?.provider === "sarvam" && process.env.GEMINI_API_KEY) {
+    mediaProvider = createAIExtractionProvider({
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+      apiKey: process.env.GEMINI_API_KEY,
+      baseUrl: null
+    });
+  }
 
   let transcriptText = "";
   let ocrText = "";
@@ -101,6 +112,15 @@ export async function POST(request: Request) {
       mimeType: file.type
     });
     transcriptText = transcription.translatedText || transcription.originalText;
+
+    if (!transcriptText && openAIFallbackProvider) {
+      const fallbackTranscription = await openAIFallbackProvider.transcribeAudio({
+        bytes,
+        storagePath: file.name,
+        mimeType: file.type
+      });
+      transcriptText = fallbackTranscription.translatedText || fallbackTranscription.originalText;
+    }
   }
 
   if (bytes && file?.type && (kind === "image" || kind === "document")) {
@@ -135,6 +155,7 @@ export async function POST(request: Request) {
     mediaKind: kind,
     provider: providerSettings?.provider ?? "fallback",
     model: providerSettings?.model ?? "fallback",
+    fallbackProvider: openAIFallbackProvider ? "openai" : "",
     transcriptText,
     ocrText,
     imageClassification,

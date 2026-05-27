@@ -24,6 +24,7 @@ type MediaLabResult = {
   mediaKind: string;
   provider: string;
   model: string;
+  fallbackProvider: string;
   transcriptText: string;
   ocrText: string;
   imageClassification: string;
@@ -931,6 +932,7 @@ function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
               <Field label="File" value={result.fileName} />
               <Field label="Type" value={result.fileType} />
               <Field label="Provider" value={result.provider} />
+              <Field label="Fallback" value={result.fallbackProvider || "Not used"} />
               <Field label="Model" value={result.model} />
             </div>
             {result.warning && <p className="form-error">{result.warning}</p>}
@@ -1379,10 +1381,10 @@ function IntegrationsView({
         </div>
         <form className="master-form" onSubmit={onSaveAI}>
           <div className="form-grid">
-            <Select name="provider" label="Provider" options={["sarvam", "gemini", "ollama_gemma", "manual"]} defaultValue={aiProvider.provider} />
+            <Select name="provider" label="Provider" options={["sarvam", "openai", "gemini", "ollama_gemma", "manual"]} defaultValue={aiProvider.provider} />
             <Input name="model" label="Model" defaultValue={aiProvider.model} />
             <Input name="baseUrl" label="Base URL" defaultValue={aiProvider.baseUrl} placeholder="Optional. Sarvam defaults to https://api.sarvam.ai" required={false} />
-            <Input name="apiKey" label="API key" type="password" placeholder={aiProvider.hasApiKey ? "Saved. Enter only to replace." : "Sarvam, Gemini, or external provider key"} required={!aiProvider.hasApiKey && aiProvider.provider !== "manual"} />
+            <Input name="apiKey" label="API key" type="password" placeholder={aiProvider.hasApiKey ? "Saved. Enter only to replace." : "Sarvam, OpenAI, Gemini, or external provider key"} required={!aiProvider.hasApiKey && aiProvider.provider !== "manual"} />
             <Select name="extractionMode" label="Extraction mode" options={["structured_json", "draft_only"]} defaultValue={aiProvider.extractionMode} />
             <Select name="status" label="Status" options={["Draft", "Connected", "Disabled"]} defaultValue={aiProvider.status} />
           </div>
