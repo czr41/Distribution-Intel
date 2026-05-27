@@ -42,6 +42,7 @@ type MediaLabResult = {
 };
 type ModalType = "outlet" | "brand" | "salesman" | "task" | "territory" | "payment" | "order" | "bill" | null;
 type BulkImportType = Exclude<ModalType, null>;
+type IntegrationNotice = { type: "success" | "error"; message: string };
 type EditableMasterData =
   | { type: "outlet"; record: OutletRow }
   | { type: "brand"; record: BrandOption }
@@ -213,6 +214,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const [metaIntegration, setMetaIntegration] = useState<MetaIntegrationSettings>(initialData.metaIntegration);
   const [aiProvider, setAIProvider] = useState<AIProviderSettings>(initialData.aiProvider);
   const [openAIIntegration, setOpenAIIntegration] = useState<OpenAIIntegrationSettings>(initialData.openAIIntegration);
+  const [integrationNotice, setIntegrationNotice] = useState<IntegrationNotice | null>(null);
   const [tasks, setTasks] = useState<TaskRow[]>(initialData.tasks);
   const [modalType, setModalType] = useState<ModalType>(null);
   const [editingItem, setEditingItem] = useState<EditableMasterData | null>(null);
@@ -363,22 +365,29 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     const form = new FormData(event.currentTarget);
     const value = (key: string) => String(form.get(key) ?? "").trim();
 
-    await actions.saveMetaIntegration(form);
-    setMetaIntegration((current) => ({
-      ...current,
-      displayName: value("displayName"),
-      status: value("status") as MetaIntegrationSettings["status"],
-      phoneNumberId: value("phoneNumberId"),
-      whatsappBusinessAccountId: value("whatsappBusinessAccountId"),
-      businessPortfolioId: value("businessPortfolioId"),
-      graphApiVersion: value("graphApiVersion"),
-      hasAccessToken: Boolean(value("accessToken")) || current.hasAccessToken,
-      hasAppSecret: Boolean(value("appSecret")) || current.hasAppSecret,
-      hasVerifyToken: Boolean(value("webhookVerifyToken")) || current.hasVerifyToken,
-      lastTestStatus: "Configuration saved",
-      lastError: "",
-      updatedAt: new Date().toLocaleString("en-IN")
-    }));
+    setIntegrationNotice(null);
+
+    try {
+      await actions.saveMetaIntegration(form);
+      setMetaIntegration((current) => ({
+        ...current,
+        displayName: value("displayName"),
+        status: value("status") as MetaIntegrationSettings["status"],
+        phoneNumberId: value("phoneNumberId"),
+        whatsappBusinessAccountId: value("whatsappBusinessAccountId"),
+        businessPortfolioId: value("businessPortfolioId"),
+        graphApiVersion: value("graphApiVersion"),
+        hasAccessToken: Boolean(value("accessToken")) || current.hasAccessToken,
+        hasAppSecret: Boolean(value("appSecret")) || current.hasAppSecret,
+        hasVerifyToken: Boolean(value("webhookVerifyToken")) || current.hasVerifyToken,
+        lastTestStatus: "Configuration saved",
+        lastError: "",
+        updatedAt: new Date().toLocaleString("en-IN")
+      }));
+      setIntegrationNotice({ type: "success", message: "Meta WhatsApp settings saved successfully." });
+    } catch (error) {
+      setIntegrationNotice({ type: "error", message: error instanceof Error ? error.message : "Meta WhatsApp settings could not be saved." });
+    }
   }
 
   async function saveAIProvider(event: FormEvent<HTMLFormElement>) {
@@ -386,19 +395,26 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     const form = new FormData(event.currentTarget);
     const value = (key: string) => String(form.get(key) ?? "").trim();
 
-    await actions.saveAIProvider(form);
-    setAIProvider((current) => ({
-      ...current,
-      provider: value("provider") as AIProviderSettings["provider"],
-      model: value("model"),
-      status: value("status") as AIProviderSettings["status"],
-      baseUrl: value("baseUrl"),
-      hasApiKey: Boolean(value("apiKey")) || current.hasApiKey,
-      extractionMode: value("extractionMode") as AIProviderSettings["extractionMode"],
-      lastTestStatus: "Configuration saved",
-      lastError: "",
-      updatedAt: new Date().toLocaleString("en-IN")
-    }));
+    setIntegrationNotice(null);
+
+    try {
+      await actions.saveAIProvider(form);
+      setAIProvider((current) => ({
+        ...current,
+        provider: value("provider") as AIProviderSettings["provider"],
+        model: value("model"),
+        status: value("status") as AIProviderSettings["status"],
+        baseUrl: value("baseUrl"),
+        hasApiKey: Boolean(value("apiKey")) || current.hasApiKey,
+        extractionMode: value("extractionMode") as AIProviderSettings["extractionMode"],
+        lastTestStatus: "Configuration saved",
+        lastError: "",
+        updatedAt: new Date().toLocaleString("en-IN")
+      }));
+      setIntegrationNotice({ type: "success", message: "AI provider settings saved successfully." });
+    } catch (error) {
+      setIntegrationNotice({ type: "error", message: error instanceof Error ? error.message : "AI provider settings could not be saved." });
+    }
   }
 
   async function saveOpenAIIntegration(event: FormEvent<HTMLFormElement>) {
@@ -406,18 +422,31 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     const form = new FormData(event.currentTarget);
     const value = (key: string) => String(form.get(key) ?? "").trim();
 
-    await actions.saveOpenAIIntegration(form);
-    setOpenAIIntegration((current) => ({
-      ...current,
-      model: value("model"),
-      transcriptionModel: value("transcriptionModel"),
-      baseUrl: value("baseUrl") || "https://api.openai.com/v1",
-      status: value("status") as OpenAIIntegrationSettings["status"],
-      hasApiKey: Boolean(value("apiKey")) || current.hasApiKey,
-      lastTestStatus: "Configuration saved",
-      lastError: "",
-      updatedAt: new Date().toLocaleString("en-IN")
-    }));
+    setIntegrationNotice(null);
+
+    try {
+      await actions.saveOpenAIIntegration(form);
+      setOpenAIIntegration((current) => {
+        const hasApiKey = Boolean(value("apiKey")) || current.hasApiKey;
+        const submittedStatus = value("status") as OpenAIIntegrationSettings["status"];
+        const savedStatus = submittedStatus === "Draft" && hasApiKey ? "Connected" : submittedStatus;
+
+        return {
+          ...current,
+          model: value("model"),
+          transcriptionModel: value("transcriptionModel"),
+          baseUrl: value("baseUrl") || "https://api.openai.com/v1",
+          status: savedStatus,
+          hasApiKey,
+          lastTestStatus: hasApiKey ? "Configuration saved. API key is stored." : "Configuration saved without API key",
+          lastError: "",
+          updatedAt: new Date().toLocaleString("en-IN")
+        };
+      });
+      setIntegrationNotice({ type: "success", message: "OpenAI fallback saved. The API key is stored and ready for fallback extraction." });
+    } catch (error) {
+      setIntegrationNotice({ type: "error", message: error instanceof Error ? error.message : "OpenAI fallback settings could not be saved." });
+    }
   }
 
   function downloadTemplate(type: BulkImportType) {
@@ -746,6 +775,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
             metaIntegration={metaIntegration}
             aiProvider={aiProvider}
             openAIIntegration={openAIIntegration}
+            notice={integrationNotice}
             onSaveMeta={saveMetaIntegration}
             onSaveAI={saveAIProvider}
             onSaveOpenAI={saveOpenAIIntegration}
@@ -1355,6 +1385,7 @@ function IntegrationsView({
   metaIntegration,
   aiProvider,
   openAIIntegration,
+  notice,
   onSaveMeta,
   onSaveAI,
   onSaveOpenAI
@@ -1362,12 +1393,14 @@ function IntegrationsView({
   metaIntegration: MetaIntegrationSettings;
   aiProvider: AIProviderSettings;
   openAIIntegration: OpenAIIntegrationSettings;
+  notice: IntegrationNotice | null;
   onSaveMeta: (event: FormEvent<HTMLFormElement>) => void;
   onSaveAI: (event: FormEvent<HTMLFormElement>) => void;
   onSaveOpenAI: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
     <section className="integrations-grid">
+      {notice ? <div className={`inline-notice ${notice.type}`} role="status">{notice.message}</div> : null}
       <article className="panel">
         <div className="panel-heading">
           <div>

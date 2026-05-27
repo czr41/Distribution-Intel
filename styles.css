@@ -148,6 +148,30 @@ button {
   color: #75500d;
 }
 
+.inline-notice {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.inline-notice.success {
+  border-color: rgba(6, 182, 200, 0.28);
+  background: var(--cyan-soft);
+  color: var(--cyan-dark);
+}
+
+.inline-notice.error {
+  border-color: #f0b9b5;
+  background: #fff1f1;
+  color: var(--red);
+}
+
 .eyebrow {
   color: var(--cyan-dark);
   font-size: 11px;

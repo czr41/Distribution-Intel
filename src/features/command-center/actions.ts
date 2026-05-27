@@ -1075,14 +1075,17 @@ export async function saveOpenAIIntegrationAction(formData: FormData) {
 
   const currentConfig = objectJson(existing?.config_json);
   const currentOpenAI = objectJson(currentConfig.openaiFallback);
+  const existingOpenAIKey = typeof currentOpenAI.apiKey === "string" && currentOpenAI.apiKey ? currentOpenAI.apiKey : null;
+  const savedApiKey = input.apiKey || existingOpenAIKey;
+  const savedStatus = input.status === "Draft" && savedApiKey ? "Connected" : input.status;
   const openaiFallback = {
     ...currentOpenAI,
-    status: input.status,
+    status: savedStatus,
     model: input.model,
     transcriptionModel: input.transcriptionModel,
     baseUrl: input.baseUrl || "https://api.openai.com/v1",
-    apiKey: input.apiKey || currentOpenAI.apiKey || null,
-    lastTestStatus: "Configuration saved",
+    apiKey: savedApiKey,
+    lastTestStatus: savedApiKey ? "Configuration saved. API key is stored." : "Configuration saved without API key",
     lastError: null,
     updatedAt: new Date().toISOString()
   };
