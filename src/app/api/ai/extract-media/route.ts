@@ -115,6 +115,7 @@ async function extractMedia(request: Request) {
   let mediaProvider = primaryProvider;
   let mediaProviderName = providerSettings?.provider ?? "fallback";
   let mediaModel = providerSettings?.model ?? "fallback";
+  let fallbackWarning = "";
   const geminiFallbackProvider =
     process.env.GEMINI_API_KEY && (kind === "image" || kind === "document")
       ? createAIExtractionProvider({
@@ -153,12 +154,16 @@ async function extractMedia(request: Request) {
     try {
       ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type });
     } catch (primaryError) {
+      const primaryMessage = errorMessage(primaryError);
+
       if (geminiFallbackProvider) {
+        fallbackWarning = `${mediaProviderName} OCR failed: ${primaryMessage}. Used Gemini fallback.`;
         mediaProvider = geminiFallbackProvider;
         mediaProviderName = "gemini";
         mediaModel = "gemini-2.5-flash";
         ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type });
       } else if (openAIFallbackProvider && mediaProviderName !== "openai") {
+        fallbackWarning = `${mediaProviderName} OCR failed: ${primaryMessage}. Used OpenAI fallback.`;
         mediaProvider = openAIFallbackProvider;
         mediaProviderName = "openai";
         mediaModel = openAIConfig.model || process.env.OPENAI_MODEL || "gpt-5.4-mini";
@@ -204,14 +209,15 @@ async function extractMedia(request: Request) {
     mediaKind: kind,
     provider: mediaProviderName,
     model: mediaModel,
-    fallbackProvider: openAIFallbackProvider ? "openai" : "",
+    fallbackProvider: fallbackWarning ? mediaProviderName : "",
     transcriptText,
     ocrText,
     imageClassification,
     extractedText: [note, transcriptText, ocrText].filter(Boolean).join("\n\n"),
     structured,
-    warning:
-      !transcriptText && !ocrText && kind !== "text"
+    warning: fallbackWarning
+      ? fallbackWarning
+      : !transcriptText && !ocrText && kind !== "text"
         ? "No machine text was extracted yet. Check the connected provider or route this media for manual review."
         : ""
   });
