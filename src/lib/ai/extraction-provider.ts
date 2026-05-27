@@ -298,21 +298,44 @@ class OpenAIExtractionProvider implements AIExtractionProvider {
     const apiKey = this.apiKey;
     if (!apiKey) throw new Error("Missing OpenAI API key");
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: this.model,
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages
-      })
-    });
+    const requestChat = (body: unknown) =>
+      fetch(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
 
-    if (!response.ok) throw new Error(`OpenAI extraction failed: ${response.status} ${await response.text()}`);
+    const requestBody = {
+      model: this.model,
+      response_format: { type: "json_object" },
+      messages
+    };
+    let response = await requestChat(requestBody);
+
+    if (!response.ok) {
+      const firstError = await response.text();
+      const normalizedError = firstError.toLowerCase();
+      const fallbackBodies: unknown[] = [];
+
+      if (response.status === 400 && normalizedError.includes("response_format")) {
+        fallbackBodies.push({ model: this.model, messages });
+      }
+
+      if ((response.status === 400 || response.status === 404) && (normalizedError.includes("model") || normalizedError.includes("unsupported"))) {
+        fallbackBodies.push({ model: "gpt-4.1-mini", response_format: { type: "json_object" }, messages });
+        fallbackBodies.push({ model: "gpt-4.1-mini", messages });
+      }
+
+      for (const fallbackBody of fallbackBodies) {
+        response = await requestChat(fallbackBody);
+        if (response.ok) break;
+      }
+
+      if (!response.ok) throw new Error(`OpenAI extraction failed: ${response.status} ${await response.text() || firstError}`);
+    }
 
     const data = (await response.json()) as OpenAIChatResponse;
     const content = data.choices?.[0]?.message?.content;

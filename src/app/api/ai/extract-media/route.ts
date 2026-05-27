@@ -79,7 +79,11 @@ function getOpenAIFallbackConfig(config: unknown): OpenAIFallbackConfig {
   return openAI as OpenAIFallbackConfig;
 }
 
-export async function POST(request: Request) {
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Media extraction failed. Check provider settings and try again.";
+}
+
+async function extractMedia(request: Request) {
   const formData = await request.formData();
   const fileInput = formData.get("file");
   const file = fileInput instanceof File && fileInput.size > 0 ? fileInput : null;
@@ -109,8 +113,12 @@ export async function POST(request: Request) {
       })
     : null;
   let mediaProvider = primaryProvider;
+  let mediaProviderName = providerSettings?.provider ?? "fallback";
+  let mediaModel = providerSettings?.model ?? "fallback";
   if ((kind === "image" || kind === "document") && providerSettings?.provider === "sarvam" && openAIFallbackProvider) {
     mediaProvider = openAIFallbackProvider;
+    mediaProviderName = "openai";
+    mediaModel = openAIConfig.model || process.env.OPENAI_MODEL || "gpt-5.4-mini";
   } else if ((kind === "image" || kind === "document") && providerSettings?.provider === "sarvam" && process.env.GEMINI_API_KEY) {
     mediaProvider = createAIExtractionProvider({
       provider: "gemini",
@@ -118,6 +126,8 @@ export async function POST(request: Request) {
       apiKey: process.env.GEMINI_API_KEY,
       baseUrl: null
     });
+    mediaProviderName = "gemini";
+    mediaModel = "gemini-2.5-flash";
   }
 
   let transcriptText = "";
@@ -143,12 +153,18 @@ export async function POST(request: Request) {
   }
 
   if (bytes && file?.type && (kind === "image" || kind === "document")) {
-    const [ocr, classification] = await Promise.all([
-      mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type }),
-      mediaProvider.classifyImage?.({ bytes, storagePath: file.name, mimeType: file.type })
-    ]);
+    const ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type });
     ocrText = ocr.text;
-    imageClassification = classification?.label ?? "";
+    imageClassification = ocrText.toLowerCase().includes("invoice") || ocrText.toLowerCase().includes("bill")
+      ? "bill_or_invoice"
+      : ocrText
+        ? "field_photo_with_text"
+        : "";
+
+    if (!imageClassification && mediaProvider.classifyImage) {
+      const classification = await mediaProvider.classifyImage({ bytes, storagePath: file.name, mimeType: file.type });
+      imageClassification = classification.label;
+    }
   }
 
   if (kind === "video") {
@@ -172,8 +188,8 @@ export async function POST(request: Request) {
     fileName: file?.name ?? "Text only",
     fileType: file?.type ?? "text/plain",
     mediaKind: kind,
-    provider: providerSettings?.provider ?? "fallback",
-    model: providerSettings?.model ?? "fallback",
+    provider: mediaProviderName,
+    model: mediaModel,
     fallbackProvider: openAIFallbackProvider ? "openai" : "",
     transcriptText,
     ocrText,
@@ -185,4 +201,13 @@ export async function POST(request: Request) {
         ? "No machine text was extracted yet. Check the connected provider or route this media for manual review."
         : ""
   });
+}
+
+export async function POST(request: Request) {
+  try {
+    return await extractMedia(request);
+  } catch (error) {
+    console.error("Media extraction failed", error);
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
+  }
 }

@@ -927,6 +927,7 @@ function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
     }
 
     setError("");
+    setResult(null);
     setIsExtracting(true);
 
     try {
@@ -936,7 +937,17 @@ function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
       });
 
       if (!response.ok) {
-        throw new Error(await response.text());
+        const body = await response.text();
+        let message = body || `Extraction failed with status ${response.status}.`;
+
+        try {
+          const parsed = JSON.parse(body) as { error?: string };
+          message = parsed.error || message;
+        } catch {
+          // Keep the raw response body when the server does not return JSON.
+        }
+
+        throw new Error(message);
       }
 
       setResult((await response.json()) as MediaLabResult);
