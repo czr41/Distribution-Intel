@@ -41,6 +41,7 @@ NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
 SARVAM_API_KEY
+SARVAM_VISION_LANGUAGE
 OPENAI_API_KEY
 OPENAI_MODEL
 OPENAI_TRANSCRIPTION_MODEL
@@ -51,6 +52,8 @@ WHATSAPP_ACCESS_TOKEN
 ```
 
 Use `.env.example` as the template.
+
+`SARVAM_VISION_LANGUAGE` is optional. It defaults to `en-IN` for bill and document OCR. Set it to a Sarvam-supported BCP-47 code such as `hi-IN`, `kn-IN`, `ta-IN`, or `mr-IN` when processing regional-language documents.
 
 ## 3. Vercel
 

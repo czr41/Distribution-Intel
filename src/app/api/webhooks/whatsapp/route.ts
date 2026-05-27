@@ -222,21 +222,30 @@ export async function POST(request: Request) {
       }
 
       if (message.messageType === "image" || message.messageType === "document") {
-        const visualProvider = aiSettingsRow?.provider === "sarvam" && openAIFallbackProvider ? openAIFallbackProvider : aiProvider;
-        const [ocr, classification] = await Promise.all([
-          visualProvider.runOCR({
+        let ocr: { text: string; confidenceScore: number };
+
+        try {
+          ocr = await aiProvider.runOCR({
             bytes: mediaBytes,
             storagePath: mediaStoragePath,
             mimeType: mediaMimeType
-          }),
-          visualProvider.classifyImage?.({
+          });
+        } catch (primaryError) {
+          if (!openAIFallbackProvider) throw primaryError;
+
+          ocr = await openAIFallbackProvider.runOCR({
             bytes: mediaBytes,
             storagePath: mediaStoragePath,
             mimeType: mediaMimeType
-          })
-        ]);
+          });
+        }
+
         ocrText = ocr.text;
-        imageClassification = classification?.label;
+        imageClassification = ocrText.toLowerCase().includes("invoice") || ocrText.toLowerCase().includes("bill")
+          ? "bill_or_invoice"
+          : ocrText
+            ? "field_photo_with_text"
+            : "media_needs_review";
       }
 
       if (message.messageType === "video") {

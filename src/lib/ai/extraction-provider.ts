@@ -134,6 +134,201 @@ async function loadBytes(input: { bytes?: ArrayBuffer; mediaUrl?: string }) {
   return response.arrayBuffer();
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+async function parseJsonResponse(response: Response) {
+  const text = await response.text();
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return { raw: text };
+  }
+}
+
+function sarvamErrorMessage(status: number, payload: unknown) {
+  const text = typeof payload === "string" ? payload : JSON.stringify(payload);
+  const normalized = text.toLowerCase();
+
+  if (status === 403 || normalized.includes("invalid_api_key")) {
+    return "Sarvam API key is invalid or does not have access to Document Intelligence.";
+  }
+
+  if (status === 429 || normalized.includes("insufficient_quota") || normalized.includes("quota")) {
+    return "Sarvam quota exceeded. Check Sarvam credits or rate limits.";
+  }
+
+  return `Sarvam Vision failed: ${status} ${text}`;
+}
+
+async function sarvamJson(input: { url: string; apiKey: string; init?: RequestInit }) {
+  const headers = new Headers(input.init?.headers);
+  headers.set("api-subscription-key", input.apiKey);
+  headers.set("Content-Type", "application/json");
+
+  const response = await fetch(input.url, {
+    ...input.init,
+    headers
+  });
+  const payload = await parseJsonResponse(response);
+
+  if (!response.ok) {
+    throw new Error(sarvamErrorMessage(response.status, payload));
+  }
+
+  return payload;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sanitizeFileName(name: string, fallback: string) {
+  const cleaned = name.split(/[\\/]/).pop()?.replace(/[^a-zA-Z0-9._-]/g, "_") ?? "";
+  return cleaned || fallback;
+}
+
+function fileExtension(fileName: string, mimeType: string) {
+  const existing = fileName.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();
+  if (existing) return existing;
+  if (mimeType === "application/pdf") return "pdf";
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/jpeg") return "jpg";
+  return "bin";
+}
+
+let crcTable: number[] | null = null;
+
+function getCrcTable() {
+  if (crcTable) return crcTable;
+  crcTable = Array.from({ length: 256 }, (_, index) => {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    return value >>> 0;
+  });
+  return crcTable;
+}
+
+function crc32(buffer: Buffer) {
+  const table = getCrcTable();
+  let value = 0xffffffff;
+  for (const byte of buffer) {
+    value = table[(value ^ byte) & 0xff] ^ (value >>> 8);
+  }
+  return (value ^ 0xffffffff) >>> 0;
+}
+
+function createStoredZip(fileName: string, bytes: ArrayBuffer) {
+  const data = Buffer.from(bytes);
+  const name = Buffer.from(fileName);
+  const crc = crc32(data);
+  const localHeader = Buffer.alloc(30);
+  localHeader.writeUInt32LE(0x04034b50, 0);
+  localHeader.writeUInt16LE(20, 4);
+  localHeader.writeUInt16LE(0, 6);
+  localHeader.writeUInt16LE(0, 8);
+  localHeader.writeUInt16LE(0, 10);
+  localHeader.writeUInt16LE(0, 12);
+  localHeader.writeUInt32LE(crc, 14);
+  localHeader.writeUInt32LE(data.length, 18);
+  localHeader.writeUInt32LE(data.length, 22);
+  localHeader.writeUInt16LE(name.length, 26);
+  localHeader.writeUInt16LE(0, 28);
+
+  const centralHeader = Buffer.alloc(46);
+  centralHeader.writeUInt32LE(0x02014b50, 0);
+  centralHeader.writeUInt16LE(20, 4);
+  centralHeader.writeUInt16LE(20, 6);
+  centralHeader.writeUInt16LE(0, 8);
+  centralHeader.writeUInt16LE(0, 10);
+  centralHeader.writeUInt16LE(0, 12);
+  centralHeader.writeUInt16LE(0, 14);
+  centralHeader.writeUInt32LE(crc, 16);
+  centralHeader.writeUInt32LE(data.length, 20);
+  centralHeader.writeUInt32LE(data.length, 24);
+  centralHeader.writeUInt16LE(name.length, 28);
+  centralHeader.writeUInt16LE(0, 30);
+  centralHeader.writeUInt16LE(0, 32);
+  centralHeader.writeUInt16LE(0, 34);
+  centralHeader.writeUInt16LE(0, 36);
+  centralHeader.writeUInt32LE(0, 38);
+  centralHeader.writeUInt32LE(0, 42);
+
+  const localPart = Buffer.concat([localHeader, name, data]);
+  const centralPart = Buffer.concat([centralHeader, name]);
+  const endRecord = Buffer.alloc(22);
+  endRecord.writeUInt32LE(0x06054b50, 0);
+  endRecord.writeUInt16LE(0, 4);
+  endRecord.writeUInt16LE(0, 6);
+  endRecord.writeUInt16LE(1, 8);
+  endRecord.writeUInt16LE(1, 10);
+  endRecord.writeUInt32LE(centralPart.length, 12);
+  endRecord.writeUInt32LE(localPart.length, 16);
+  endRecord.writeUInt16LE(0, 20);
+
+  return Buffer.concat([localPart, centralPart, endRecord]);
+}
+
+function findUrl(value: unknown): string | undefined {
+  if (typeof value === "string" && /^https?:\/\//i.test(value)) return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const match = findUrl(item);
+      if (match) return match;
+    }
+  }
+  if (isRecord(value)) {
+    const preferredKeys = ["upload_url", "uploadUrl", "file_url", "fileUrl", "url", "signed_url", "signedUrl"];
+    for (const key of preferredKeys) {
+      const match = findUrl(value[key]);
+      if (match) return match;
+    }
+    for (const item of Object.values(value)) {
+      const match = findUrl(item);
+      if (match) return match;
+    }
+  }
+  return undefined;
+}
+
+function selectDownloadEntry(downloadUrls: unknown) {
+  if (!isRecord(downloadUrls)) return undefined;
+
+  const entries = Object.entries(downloadUrls);
+  return (
+    entries.find(([name]) => name.toLowerCase().endsWith(".json")) ??
+    entries.find(([name]) => name.toLowerCase().endsWith(".md")) ??
+    entries.find(([name]) => name.toLowerCase().endsWith(".html")) ??
+    entries[0]
+  );
+}
+
+function collectDocumentText(value: unknown, lines: string[] = [], depth = 0) {
+  if (depth > 8) return lines;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length > 2 && !/^https?:\/\//i.test(trimmed)) lines.push(trimmed);
+    return lines;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectDocumentText(item, lines, depth + 1));
+    return lines;
+  }
+  if (isRecord(value)) {
+    const priorityKeys = ["text", "content", "markdown", "html", "page_content", "pageContent", "transcription"];
+    priorityKeys.forEach((key) => collectDocumentText(value[key], lines, depth + 1));
+    Object.entries(value)
+      .filter(([key]) => !priorityKeys.includes(key))
+      .forEach(([, item]) => collectDocumentText(item, lines, depth + 1));
+  }
+  return lines;
+}
+
 class GeminiExtractionProvider implements AIExtractionProvider {
   constructor(private readonly config: ProviderConfig) {}
 
@@ -229,6 +424,99 @@ class SarvamExtractionProvider implements AIExtractionProvider {
     return (this.config.baseUrl || "https://api.sarvam.ai").replace(/\/$/, "");
   }
 
+  private get documentLanguage() {
+    return process.env.SARVAM_VISION_LANGUAGE || "en-IN";
+  }
+
+  private async uploadDocument(input: { bytes: Buffer; fileName: string; mimeType: string; jobId: string; apiKey: string }) {
+    const uploadLinks = await sarvamJson({
+      url: `${this.baseUrl}/doc-digitization/job/v1/upload-files`,
+      apiKey: input.apiKey,
+      init: {
+        method: "POST",
+        body: JSON.stringify({
+          job_id: input.jobId,
+          files: [input.fileName]
+        })
+      }
+    });
+    const uploadUrls = isRecord(uploadLinks.upload_urls) ? uploadLinks.upload_urls : uploadLinks.uploadUrls;
+    const uploadEntry = isRecord(uploadUrls) ? uploadUrls[input.fileName] ?? Object.values(uploadUrls)[0] : uploadUrls;
+    const uploadUrl = findUrl(uploadEntry);
+
+    if (!uploadUrl) throw new Error("Sarvam Vision did not return a document upload URL.");
+
+    const headers: Record<string, string> = { "Content-Type": input.mimeType };
+    if (uploadUrl.includes(".blob.core.windows.net")) {
+      headers["x-ms-blob-type"] = "BlockBlob";
+    }
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "PUT",
+      headers,
+      body: new Blob([input.bytes], { type: input.mimeType })
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Sarvam Vision upload failed: ${uploadResponse.status} ${await uploadResponse.text()}`);
+    }
+  }
+
+  private async waitForDocumentJob(input: { jobId: string; apiKey: string }) {
+    let latestStatus: Record<string, unknown> = {};
+
+    for (let attempt = 0; attempt < 18; attempt += 1) {
+      latestStatus = await sarvamJson({
+        url: `${this.baseUrl}/doc-digitization/job/v1/${input.jobId}/status`,
+        apiKey: input.apiKey,
+        init: { method: "GET" }
+      });
+      const state = String(latestStatus.job_state ?? latestStatus.jobState ?? "");
+
+      if (state === "Completed" || state === "PartiallyCompleted") return latestStatus;
+      if (state === "Failed") {
+        const detail = latestStatus.error_message ?? latestStatus.errorMessage ?? JSON.stringify(latestStatus);
+        throw new Error(`Sarvam Vision job failed: ${detail}`);
+      }
+
+      await sleep(1500);
+    }
+
+    const state = String(latestStatus.job_state ?? latestStatus.jobState ?? "unknown");
+    throw new Error(`Sarvam Vision job is still processing (${state}). Try again with a smaller file or retry in a moment.`);
+  }
+
+  private async downloadDocumentOutput(input: { jobId: string; apiKey: string }) {
+    const downloadLinks = await sarvamJson({
+      url: `${this.baseUrl}/doc-digitization/job/v1/${input.jobId}/download-files`,
+      apiKey: input.apiKey,
+      init: {
+        method: "POST",
+        body: JSON.stringify({})
+      }
+    });
+    const entry = selectDownloadEntry(downloadLinks.download_urls ?? downloadLinks.downloadUrls);
+    const downloadUrl = entry ? findUrl(entry[1]) : undefined;
+
+    if (!downloadUrl) throw new Error("Sarvam Vision completed but did not return a readable output URL.");
+
+    const response = await fetch(downloadUrl);
+    if (!response.ok) throw new Error(`Sarvam Vision output download failed: ${response.status} ${await response.text()}`);
+
+    const name = entry[0].toLowerCase();
+    const text = await response.text();
+    if (name.endsWith(".json")) {
+      try {
+        const json = JSON.parse(text) as unknown;
+        return collectDocumentText(json).join("\n").trim() || text;
+      } catch {
+        return text;
+      }
+    }
+
+    return text;
+  }
+
   async transcribeAudio(input: AudioInput): Promise<TranscriptionResult> {
     const apiKey = this.apiKey;
     const bytes = await loadBytes(input);
@@ -266,12 +554,62 @@ class SarvamExtractionProvider implements AIExtractionProvider {
     };
   }
 
-  async runOCR(): Promise<OCRResult> {
-    return { text: "", confidenceScore: 0.2 };
+  async runOCR(input: ImageInput): Promise<OCRResult> {
+    const apiKey = this.apiKey;
+    const bytes = await loadBytes(input);
+    if (!apiKey || !bytes) return { text: "", confidenceScore: 0.2 };
+
+    const ext = fileExtension(input.storagePath, input.mimeType);
+    const sourceFileName = sanitizeFileName(input.storagePath, `document.${ext}`);
+    const isPdf = input.mimeType === "application/pdf" || sourceFileName.toLowerCase().endsWith(".pdf");
+    const isImage = input.mimeType === "image/png" || input.mimeType === "image/jpeg" || /\.(png|jpe?g)$/i.test(sourceFileName);
+
+    if (!isPdf && !isImage) {
+      throw new Error("Sarvam Vision supports PDF, PNG, and JPEG documents.");
+    }
+
+    const uploadName = isPdf ? sourceFileName.replace(/\.[^.]+$/, ".pdf") : `${sourceFileName.replace(/\.[^.]+$/, "")}.zip`;
+    const uploadBytes = isPdf ? Buffer.from(bytes) : createStoredZip(sourceFileName, bytes);
+    const uploadMimeType = isPdf ? "application/pdf" : "application/zip";
+    const job = await sarvamJson({
+      url: `${this.baseUrl}/doc-digitization/job/v1`,
+      apiKey,
+      init: {
+        method: "POST",
+        body: JSON.stringify({
+          job_parameters: {
+            language: this.documentLanguage,
+            output_format: "json"
+          }
+        })
+      }
+    });
+    const jobId = typeof job.job_id === "string" ? job.job_id : typeof job.jobId === "string" ? job.jobId : "";
+    if (!jobId) throw new Error("Sarvam Vision did not return a job id.");
+
+    await this.uploadDocument({ bytes: uploadBytes, fileName: uploadName, mimeType: uploadMimeType, jobId, apiKey });
+    await sarvamJson({
+      url: `${this.baseUrl}/doc-digitization/job/v1/${jobId}/start`,
+      apiKey,
+      init: {
+        method: "POST",
+        body: JSON.stringify({})
+      }
+    });
+    await this.waitForDocumentJob({ jobId, apiKey });
+
+    const text = await this.downloadDocumentOutput({ jobId, apiKey });
+    return { text, confidenceScore: text ? 0.88 : 0.35 };
   }
 
-  async classifyImage(): Promise<ImageClassificationResult> {
-    return { label: "media_needs_review", confidenceScore: 0.2 };
+  async classifyImage(input: ImageInput): Promise<ImageClassificationResult> {
+    const ocr = await this.runOCR(input);
+    const normalized = ocr.text.toLowerCase();
+
+    return {
+      label: normalized.includes("invoice") || normalized.includes("bill") ? "bill_or_invoice" : ocr.text ? "field_photo_with_text" : "media_needs_review",
+      confidenceScore: ocr.confidenceScore
+    };
   }
 
   async extractStructuredData(input: ExtractionInput): Promise<StructuredExtractionResult> {

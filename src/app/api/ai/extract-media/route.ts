@@ -115,20 +115,15 @@ async function extractMedia(request: Request) {
   let mediaProvider = primaryProvider;
   let mediaProviderName = providerSettings?.provider ?? "fallback";
   let mediaModel = providerSettings?.model ?? "fallback";
-  if ((kind === "image" || kind === "document") && providerSettings?.provider === "sarvam" && openAIFallbackProvider) {
-    mediaProvider = openAIFallbackProvider;
-    mediaProviderName = "openai";
-    mediaModel = openAIConfig.model || process.env.OPENAI_MODEL || "gpt-5.4-mini";
-  } else if ((kind === "image" || kind === "document") && providerSettings?.provider === "sarvam" && process.env.GEMINI_API_KEY) {
-    mediaProvider = createAIExtractionProvider({
-      provider: "gemini",
-      model: "gemini-2.5-flash",
-      apiKey: process.env.GEMINI_API_KEY,
-      baseUrl: null
-    });
-    mediaProviderName = "gemini";
-    mediaModel = "gemini-2.5-flash";
-  }
+  const geminiFallbackProvider =
+    process.env.GEMINI_API_KEY && (kind === "image" || kind === "document")
+      ? createAIExtractionProvider({
+          provider: "gemini",
+          model: "gemini-2.5-flash",
+          apiKey: process.env.GEMINI_API_KEY,
+          baseUrl: null
+        })
+      : null;
 
   let transcriptText = "";
   let ocrText = "";
@@ -153,7 +148,26 @@ async function extractMedia(request: Request) {
   }
 
   if (bytes && file?.type && (kind === "image" || kind === "document")) {
-    const ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type });
+    let ocr: { text: string; confidenceScore: number };
+
+    try {
+      ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type });
+    } catch (primaryError) {
+      if (geminiFallbackProvider) {
+        mediaProvider = geminiFallbackProvider;
+        mediaProviderName = "gemini";
+        mediaModel = "gemini-2.5-flash";
+        ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type });
+      } else if (openAIFallbackProvider && mediaProviderName !== "openai") {
+        mediaProvider = openAIFallbackProvider;
+        mediaProviderName = "openai";
+        mediaModel = openAIConfig.model || process.env.OPENAI_MODEL || "gpt-5.4-mini";
+        ocr = await mediaProvider.runOCR({ bytes, storagePath: file.name, mimeType: file.type });
+      } else {
+        throw primaryError;
+      }
+    }
+
     ocrText = ocr.text;
     imageClassification = ocrText.toLowerCase().includes("invoice") || ocrText.toLowerCase().includes("bill")
       ? "bill_or_invoice"

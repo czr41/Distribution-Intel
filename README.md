@@ -66,7 +66,7 @@ See `CLOUD_DEPLOY.md` for Supabase, Vercel, and environment variable setup.
 - Queue: BullMQ, Temporal, or Cloud Tasks
 - Storage: S3-compatible object storage for images and voice notes
 - Messaging: WhatsApp Cloud API, Gupshup, or Twilio behind a provider interface
-- AI: Sarvam AI for Indian-language voice transcription, OpenAI/Gemini for fallback vision and structured extraction, all behind a swappable provider interface
+- AI: Sarvam AI for Indian-language voice transcription and Sarvam Vision document OCR, with OpenAI/Gemini as fallback providers behind a swappable provider interface
 - Analytics: Postgres views first, then warehouse/BI when volume grows
 
 See `BUILD_PLAN.md`, `src/domain/types.ts`, `src/lib/providers.ts`, `src/lib/permissions.ts`, and `supabase/schema.sql` for the production foundation.
