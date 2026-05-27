@@ -337,7 +337,13 @@ function uniqueNonEmptyLines(values: string[]) {
   values
     .flatMap((value) => value.split(/\r?\n/))
     .map((line) => line.trim())
-    .filter(Boolean)
+    .filter((line) => {
+      if (!line) return false;
+      if (/^\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:/i.test(line)) return false;
+      if (/^\d{8}_[a-f0-9-]+_\d+_block_\d+$/i.test(line)) return false;
+      if (/^(paragraph|line|word|block)$/i.test(line)) return false;
+      return true;
+    })
     .forEach((line) => {
       const key = line.toLowerCase();
       if (!seen.has(key)) {
@@ -413,7 +419,7 @@ function extractTextFromZip(buffer: Buffer) {
   const textOutput = entries.filter((entry) => entry.name.toLowerCase().endsWith(".txt")).map((entry) => entry.text);
   const htmlText = entries.filter((entry) => entry.name.toLowerCase().endsWith(".html")).map((entry) => stripHtml(entry.text));
 
-  return uniqueNonEmptyLines([...jsonText, ...markdownText, ...textOutput, ...htmlText]);
+  return uniqueNonEmptyLines([...markdownText, ...textOutput, ...htmlText, ...jsonText]);
 }
 
 class GeminiExtractionProvider implements AIExtractionProvider {
