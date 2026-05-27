@@ -1,4 +1,5 @@
 import type { Confidence, ExtractionCategory, IncomingMessage, StructuredExtractionResult } from "@/domain/types";
+import { inflateRawSync } from "node:zlib";
 import type {
   AIExtractionProvider,
   AudioInput,
@@ -329,6 +330,58 @@ function collectDocumentText(value: unknown, lines: string[] = [], depth = 0) {
   return lines;
 }
 
+function extractTextFromZip(buffer: Buffer) {
+  const entries: Array<{ name: string; text: string }> = [];
+  let offset = 0;
+
+  while (offset + 30 < buffer.length) {
+    if (buffer.readUInt32LE(offset) !== 0x04034b50) {
+      const nextOffset = buffer.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]), offset + 1);
+      if (nextOffset === -1) break;
+      offset = nextOffset;
+    }
+
+    const method = buffer.readUInt16LE(offset + 8);
+    const compressedSize = buffer.readUInt32LE(offset + 18);
+    const fileNameLength = buffer.readUInt16LE(offset + 26);
+    const extraLength = buffer.readUInt16LE(offset + 28);
+    const nameStart = offset + 30;
+    const dataStart = nameStart + fileNameLength + extraLength;
+    const dataEnd = dataStart + compressedSize;
+
+    if (dataEnd > buffer.length) break;
+
+    const name = buffer.subarray(nameStart, nameStart + fileNameLength).toString("utf8");
+    const compressed = buffer.subarray(dataStart, dataEnd);
+    let uncompressed: Buffer | undefined;
+
+    if (method === 0) {
+      uncompressed = Buffer.from(compressed);
+    } else if (method === 8) {
+      uncompressed = inflateRawSync(compressed);
+    }
+
+    if (uncompressed && /\.(md|json|txt|html)$/i.test(name)) {
+      entries.push({ name, text: uncompressed.toString("utf8") });
+    }
+
+    offset = dataEnd;
+  }
+
+  const preferred = entries.find((entry) => entry.name.toLowerCase().endsWith(".md")) ?? entries.find((entry) => entry.name.toLowerCase().endsWith(".json")) ?? entries[0];
+  if (!preferred) return "";
+
+  if (preferred.name.toLowerCase().endsWith(".json")) {
+    try {
+      return collectDocumentText(JSON.parse(preferred.text) as unknown).join("\n").trim() || preferred.text;
+    } catch {
+      return preferred.text;
+    }
+  }
+
+  return preferred.text;
+}
+
 class GeminiExtractionProvider implements AIExtractionProvider {
   constructor(private readonly config: ProviderConfig) {}
 
@@ -505,7 +558,12 @@ class SarvamExtractionProvider implements AIExtractionProvider {
     if (!response.ok) throw new Error(`Sarvam Vision output download failed: ${response.status} ${await response.text()}`);
 
     const name = entry[0].toLowerCase();
-    const text = await response.text();
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.subarray(0, 4).toString("binary") === "PK\u0003\u0004") {
+      return extractTextFromZip(bytes);
+    }
+
+    const text = bytes.toString("utf8");
     if (name.endsWith(".json")) {
       try {
         const json = JSON.parse(text) as unknown;
