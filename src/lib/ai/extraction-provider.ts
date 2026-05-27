@@ -499,7 +499,7 @@ class SarvamExtractionProvider implements AIExtractionProvider {
     const entry = selectDownloadEntry(downloadLinks.download_urls ?? downloadLinks.downloadUrls);
     const downloadUrl = entry ? findUrl(entry[1]) : undefined;
 
-    if (!downloadUrl) throw new Error("Sarvam Vision completed but did not return a readable output URL.");
+    if (!entry || !downloadUrl) throw new Error("Sarvam Vision completed but did not return a readable output URL.");
 
     const response = await fetch(downloadUrl);
     if (!response.ok) throw new Error(`Sarvam Vision output download failed: ${response.status} ${await response.text()}`);
