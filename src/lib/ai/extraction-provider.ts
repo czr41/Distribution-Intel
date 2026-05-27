@@ -451,10 +451,11 @@ class SarvamExtractionProvider implements AIExtractionProvider {
       headers["x-ms-blob-type"] = "BlockBlob";
     }
 
+    const uploadBody = new Uint8Array(input.bytes);
     const uploadResponse = await fetch(uploadUrl, {
       method: "PUT",
       headers,
-      body: new Blob([input.bytes], { type: input.mimeType })
+      body: uploadBody
     });
 
     if (!uploadResponse.ok) {
