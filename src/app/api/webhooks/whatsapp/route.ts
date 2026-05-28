@@ -62,6 +62,20 @@ function getOpenAIFallbackConfig(config: unknown): OpenAIFallbackConfig {
   return openAI as OpenAIFallbackConfig;
 }
 
+function uniqueTextParts(...values: Array<string | undefined | null>) {
+  const seen = new Set<string>();
+  return values
+    .map((value) => value?.trim() ?? "")
+    .filter((value) => {
+      if (!value) return false;
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join("\n\n");
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get("hub.mode");
@@ -210,7 +224,7 @@ export async function POST(request: Request) {
           storagePath: mediaStoragePath,
           mimeType: mediaMimeType
         });
-        transcriptText = transcription.originalText || transcription.translatedText;
+        transcriptText = uniqueTextParts(transcription.originalText, transcription.translatedText);
 
         if (!transcriptText && openAIFallbackProvider) {
           const fallbackTranscription = await openAIFallbackProvider.transcribeAudio({
@@ -218,7 +232,7 @@ export async function POST(request: Request) {
             storagePath: mediaStoragePath,
             mimeType: mediaMimeType
           });
-          transcriptText = fallbackTranscription.originalText || fallbackTranscription.translatedText;
+          transcriptText = uniqueTextParts(fallbackTranscription.originalText, fallbackTranscription.translatedText);
         }
       }
 
@@ -285,7 +299,8 @@ export async function POST(request: Request) {
       incomingMessageId: incoming.id,
       extractionId: extraction.id,
       text: classificationText || imageClassification || "",
-      structured
+      structured,
+      languageHint: structured.language
     });
 
     await supabase.from("verification_queue").insert({

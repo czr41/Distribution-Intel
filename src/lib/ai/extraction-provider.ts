@@ -547,6 +547,40 @@ class SarvamExtractionProvider implements AIExtractionProvider {
     return process.env.SARVAM_SPEECH_LANGUAGE || "unknown";
   }
 
+  private async runSpeechToText(input: {
+    bytes: ArrayBuffer;
+    mimeType: string;
+    model: string;
+    mode: string;
+    apiKey: string;
+  }) {
+    const formData = new FormData();
+    formData.append("file", new Blob([input.bytes], { type: input.mimeType }), `voice-note.${input.mimeType.split("/")[1] ?? "bin"}`);
+    formData.append("model", input.model);
+    formData.append("language_code", this.speechLanguage);
+    if (input.model === "saaras:v3") {
+      formData.append("mode", input.mode);
+    }
+
+    const response = await fetch(`${this.baseUrl}/speech-to-text`, {
+      method: "POST",
+      headers: {
+        "api-subscription-key": input.apiKey
+      },
+      body: formData
+    });
+
+    if (!response.ok) return null;
+
+    const data = (await response.json()) as Record<string, unknown>;
+    const text = String(data.transcript ?? data.transcript_text ?? data.text ?? "").trim();
+    const translatedText = String(data.translated_text ?? data.translation ?? "").trim();
+    const language = String(data.language_code ?? data.language ?? data.detected_language ?? "unknown");
+    const confidence = typeof data.confidence === "number" ? data.confidence : text || translatedText ? 0.82 : 0.2;
+
+    return { text, translatedText, language, confidence };
+  }
+
   private async uploadDocument(input: { bytes: Buffer; fileName: string; mimeType: string; jobId: string; apiKey: string }) {
     const uploadLinks = await sarvamJson({
       url: `${this.baseUrl}/doc-digitization/job/v1/upload-files`,
@@ -649,37 +683,35 @@ class SarvamExtractionProvider implements AIExtractionProvider {
       return { originalText: "", detectedLanguage: "unknown", translatedText: "", confidenceScore: 0.2 };
     }
 
-    const formData = new FormData();
     const model = this.config.model || "saaras:v3";
-    formData.append("file", new Blob([bytes], { type: input.mimeType }), `voice-note.${input.mimeType.split("/")[1] ?? "bin"}`);
-    formData.append("model", model);
-    formData.append("language_code", this.speechLanguage);
-    if (model === "saaras:v3") {
-      formData.append("mode", this.speechMode);
+
+    if (model === "saaras:v3" && this.speechMode === "translate") {
+      const source = await this.runSpeechToText({ bytes, mimeType: input.mimeType, model, mode: "transcribe", apiKey });
+      const translated = await this.runSpeechToText({ bytes, mimeType: input.mimeType, model, mode: "translate", apiKey });
+      const originalText = source?.text || translated?.text || "";
+      const translatedText = translated?.translatedText || translated?.text || source?.translatedText || originalText;
+      const detectedLanguage = source?.language || translated?.language || "unknown";
+
+      if (originalText || translatedText) {
+        return {
+          originalText,
+          detectedLanguage,
+          translatedText,
+          confidenceScore: Math.max(source?.confidence ?? 0, translated?.confidence ?? 0.2)
+        };
+      }
     }
 
-    const response = await fetch(`${this.baseUrl}/speech-to-text`, {
-      method: "POST",
-      headers: {
-        "api-subscription-key": apiKey
-      },
-      body: formData
-    });
-
-    if (!response.ok) {
+    const result = await this.runSpeechToText({ bytes, mimeType: input.mimeType, model, mode: this.speechMode, apiKey });
+    if (!result) {
       return { originalText: "", detectedLanguage: "unknown", translatedText: "", confidenceScore: 0.2 };
     }
 
-    const data = await response.json();
-    const text = data?.transcript ?? data?.transcript_text ?? data?.text ?? "";
-    const language = data?.language_code ?? data?.language ?? data?.detected_language ?? "unknown";
-    const confidence = typeof data?.confidence === "number" ? data.confidence : 0.82;
-
     return {
-      originalText: text,
-      detectedLanguage: language,
-      translatedText: this.speechMode === "translate" ? text : data?.translated_text ?? text,
-      confidenceScore: confidence
+      originalText: result.text,
+      detectedLanguage: result.language,
+      translatedText: result.translatedText || result.text,
+      confidenceScore: result.confidence
     };
   }
 
@@ -707,7 +739,7 @@ class SarvamExtractionProvider implements AIExtractionProvider {
         method: "POST",
         body: JSON.stringify({
           job_parameters: {
-            language: input.language || this.documentLanguage,
+            language: input.language && input.language !== "auto" ? input.language : this.documentLanguage,
             output_format: "md"
           }
         })

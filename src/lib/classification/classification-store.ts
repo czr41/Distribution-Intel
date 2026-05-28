@@ -8,13 +8,15 @@ type PersistInput = {
   extractionId: string;
   text: string;
   structured: StructuredExtractionResult;
+  languageHint?: string;
 };
 
 export async function persistClassificationDrafts(input: PersistInput) {
   const classification = classifyShipD2RSignal({
     text: input.text,
     structured: input.structured,
-    sourceMessageId: input.incomingMessageId
+    sourceMessageId: input.incomingMessageId,
+    languageHint: input.languageHint
   });
 
   const { data: classificationRow, error: classificationError } = await input.supabase
@@ -25,6 +27,9 @@ export async function persistClassificationDrafts(input: PersistInput) {
       primary_category: classification.primaryCategory,
       secondary_categories: classification.secondaryCategories,
       confidence: classification.confidence,
+      language_detected: classification.languageDetected,
+      original_text: classification.originalText,
+      normalized_text: classification.normalizedText,
       extracted_entities: classification.extractedEntities,
       requires_review: classification.requiresHumanReview,
       reason_for_review: classification.reasonForReview,

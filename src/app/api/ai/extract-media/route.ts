@@ -85,6 +85,20 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Media extraction failed. Check provider settings and try again.";
 }
 
+function uniqueTextParts(...values: Array<string | undefined | null>) {
+  const seen = new Set<string>();
+  return values
+    .map((value) => value?.trim() ?? "")
+    .filter((value) => {
+      if (!value) return false;
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join("\n\n");
+}
+
 function mediaProviderMode(value: FormDataEntryValue | null): MediaProviderMode {
   const normalized = String(value ?? "auto").trim().toLowerCase();
   return normalized === "sarvam" || normalized === "openai" ? normalized : "auto";
@@ -93,6 +107,9 @@ function mediaProviderMode(value: FormDataEntryValue | null): MediaProviderMode 
 function sarvamDocumentLanguage(value: FormDataEntryValue | null) {
   const normalized = String(value ?? "").trim().toLowerCase();
   const languages: Record<string, string> = {
+    "auto detect": "auto",
+    auto: "auto",
+    default: "auto",
     hindi: "hi-IN",
     english: "en-IN",
     kannada: "kn-IN",
@@ -179,7 +196,7 @@ async function extractMedia(request: Request) {
       storagePath: file.name,
       mimeType: file.type
     });
-    transcriptText = transcription.translatedText || transcription.originalText;
+    transcriptText = uniqueTextParts(transcription.originalText, transcription.translatedText);
 
     if (!transcriptText && providerMode === "auto" && openAIFallbackProvider) {
       const fallbackTranscription = await openAIFallbackProvider.transcribeAudio({
@@ -187,7 +204,7 @@ async function extractMedia(request: Request) {
         storagePath: file.name,
         mimeType: file.type
       });
-      transcriptText = fallbackTranscription.translatedText || fallbackTranscription.originalText;
+      transcriptText = uniqueTextParts(fallbackTranscription.originalText, fallbackTranscription.translatedText);
     }
   }
 
@@ -298,7 +315,8 @@ async function extractMedia(request: Request) {
       incomingMessageId: incoming.id,
       extractionId: extraction.id,
       text: extractedText || note || imageClassification,
-      structured
+      structured,
+      languageHint: documentLanguage
     });
 
     await supabase.from("verification_queue").insert({

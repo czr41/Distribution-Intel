@@ -18,6 +18,8 @@ The safest first path is Supabase Dashboard -> SQL Editor -> paste `supabase/sch
 
 Re-run `supabase/schema.sql` after each database-backed feature upgrade. The file is written with `create table if not exists` and guarded indexes, so it can safely add newer tables such as `message_classifications` and `draft_business_records` without recreating existing data.
 
+The classification layer stores the original extracted text, a normalized English business-signal text, and the detected language for every message. This keeps regional-language evidence intact while letting the workflow classify Hindi, Gujarati, Kannada, Marathi, Tamil, and Telugu inputs consistently.
+
 Seed starter demo data with:
 
 ```txt

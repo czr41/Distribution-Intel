@@ -291,6 +291,8 @@ function verificationDraftFromRow(row: {
     confidence: numberValue(row.confidence),
     primaryCategory: typeof draftJson.category === "string" ? draftJson.category : "unclear",
     secondaryCategories: Array.isArray(draftJson.secondary_categories) ? draftJson.secondary_categories.map(String) : [],
+    languageDetected: typeof draftJson.language_detected === "string" ? draftJson.language_detected : "unknown",
+    normalizedText: typeof draftJson.normalized_text === "string" ? draftJson.normalized_text : "",
     reasonForReview: reviewNotes || "Needs admin confirmation",
     rawText: typeof draftJson.source_text === "string" ? draftJson.source_text : "",
     transcriptText: "",

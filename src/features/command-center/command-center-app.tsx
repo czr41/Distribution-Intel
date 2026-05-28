@@ -38,6 +38,8 @@ type MediaLabResult = {
     primaryCategory: string;
     secondaryCategories: string[];
     confidence: number;
+    languageDetected?: string;
+    normalizedText?: string;
     reasonForReview: string;
     draftRecords: Array<{ recordType: string; title: string }>;
   } | null;
@@ -987,9 +989,10 @@ function VerificationWorkbench({
                 </div>
                 <p>{draft.reasonForReview}</p>
                 <div className="record-meta">
-                  <span>{draft.recordType}</span>
-                  <span>{draft.primaryCategory}</span>
-                  <span className="tag">{draft.status}</span>
+              <span>{draft.recordType}</span>
+              <span>{draft.primaryCategory}</span>
+              <span>{draft.languageDetected}</span>
+              <span className="tag">{draft.status}</span>
                 </div>
               </button>
             ))
@@ -1015,6 +1018,7 @@ function VerificationWorkbench({
             <input type="hidden" name="id" value={selectedDraft.id} />
             <div className="tag-row">
               <span className="tag blue">{selectedDraft.primaryCategory}</span>
+              <span className="tag">{selectedDraft.languageDetected}</span>
               {selectedDraft.secondaryCategories.map((category) => <span className="tag" key={category}>{category}</span>)}
               <span className={`tag ${selectedDraft.confidence < 0.85 ? "warn" : "blue"}`}>{Math.round(selectedDraft.confidence * 100)}%</span>
             </div>
@@ -1038,6 +1042,7 @@ function VerificationWorkbench({
             </div>
             <div className="evidence-split">
               <ResultBlock title="Raw WhatsApp text" value={selectedDraft.rawText || "No raw text."} />
+              <ResultBlock title="English normalized text" value={selectedDraft.normalizedText || "No normalized text."} />
               <ResultBlock title="Transcript / OCR" value={[selectedDraft.transcriptText, selectedDraft.ocrText].filter(Boolean).join("\n\n") || "No machine text."} />
               <ResultBlock title="Entities JSON" value={JSON.stringify(selectedDraft.draftJson, null, 2)} />
             </div>
@@ -1148,9 +1153,9 @@ function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
             <Select name="providerMode" label="Extraction provider" options={["Auto", "Sarvam", "OpenAI"]} defaultValue="Auto" />
             <Select
               name="sarvamLanguage"
-              label="Sarvam document language"
-              options={["Default", "Hindi", "English", "Kannada", "Marathi", "Tamil", "Telugu", "Gujarati", "Bengali", "Malayalam", "Punjabi", "Urdu"]}
-              defaultValue="Hindi"
+              label="Input language"
+              options={["Auto detect", "Hindi", "Gujarati", "English", "Kannada", "Marathi", "Tamil", "Telugu", "Bengali", "Malayalam", "Punjabi", "Urdu"]}
+              defaultValue="Auto detect"
             />
           </div>
           {error && <p className="form-error">{error}</p>}
@@ -1179,7 +1184,7 @@ function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
               <Field label="File" value={result.fileName} />
               <Field label="Type" value={result.fileType} />
               <Field label="Selected mode" value={result.providerMode || "auto"} />
-              <Field label="Document language" value={result.documentLanguage || "Default"} />
+              <Field label="Input language" value={result.documentLanguage || "Auto detect"} />
               <Field label="Provider" value={result.provider} />
               <Field label="Fallback" value={result.fallbackProvider || "Not used"} />
               <Field label="Model" value={result.model} />
@@ -1193,6 +1198,8 @@ function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
                   primaryCategory: result.classification.primaryCategory,
                   secondaryCategories: result.classification.secondaryCategories,
                   confidence: result.classification.confidence,
+                  languageDetected: result.classification.languageDetected,
+                  normalizedText: result.classification.normalizedText,
                   reasonForReview: result.classification.reasonForReview,
                   draftRecords: result.classification.draftRecords
                 }, null, 2)}

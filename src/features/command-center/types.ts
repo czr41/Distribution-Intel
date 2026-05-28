@@ -103,6 +103,8 @@ export type VerificationDraftRecord = {
   confidence: number;
   primaryCategory: string;
   secondaryCategories: string[];
+  languageDetected: string;
+  normalizedText: string;
   reasonForReview: string;
   rawText: string;
   transcriptText: string;

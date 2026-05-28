@@ -103,8 +103,11 @@ type VerificationDraftResult = {
   message_classifications?: {
     primary_category?: string | null;
     secondary_categories?: string[] | null;
+    language_detected?: string | null;
+    original_text?: string | null;
+    normalized_text?: string | null;
     reason_for_review?: string | null;
-  } | { primary_category?: string | null; secondary_categories?: string[] | null; reason_for_review?: string | null }[] | null;
+  } | { primary_category?: string | null; secondary_categories?: string[] | null; language_detected?: string | null; original_text?: string | null; normalized_text?: string | null; reason_for_review?: string | null }[] | null;
   message_ai_extractions?: {
     transcript_text?: string | null;
     ocr_text?: string | null;
@@ -308,7 +311,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       .order("created_at", { ascending: false }),
     supabase
       .from("draft_business_records")
-      .select("id,record_type,title,draft_json,confidence,status,created_at,message_classifications(primary_category,secondary_categories,reason_for_review),message_ai_extractions(transcript_text,ocr_text),incoming_messages(text_body)")
+      .select("id,record_type,title,draft_json,confidence,status,created_at,message_classifications(primary_category,secondary_categories,language_detected,original_text,normalized_text,reason_for_review),message_ai_extractions(transcript_text,ocr_text),incoming_messages(text_body)")
       .neq("status", "approved")
       .order("created_at", { ascending: false })
       .limit(25),
@@ -485,8 +488,10 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       confidence: numberValue(draft.confidence),
       primaryCategory: classification?.primary_category ?? "unclear",
       secondaryCategories: classification?.secondary_categories ?? [],
+      languageDetected: classification?.language_detected ?? (typeof draftJson.language_detected === "string" ? draftJson.language_detected : "unknown"),
+      normalizedText: classification?.normalized_text ?? (typeof draftJson.normalized_text === "string" ? draftJson.normalized_text : ""),
       reasonForReview: classification?.reason_for_review ?? "Needs admin confirmation",
-      rawText: message?.text_body ?? "",
+      rawText: classification?.original_text ?? message?.text_body ?? "",
       transcriptText: extraction?.transcript_text ?? "",
       ocrText: extraction?.ocr_text ?? "",
       draftJson,
