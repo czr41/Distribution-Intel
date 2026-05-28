@@ -294,6 +294,39 @@ create table if not exists tasks (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists message_classifications (
+  id uuid primary key default gen_random_uuid(),
+  incoming_message_id uuid not null references incoming_messages(id) on delete cascade,
+  extraction_id uuid references message_ai_extractions(id) on delete set null,
+  primary_category text not null,
+  secondary_categories text[] not null default '{}'::text[],
+  confidence numeric not null default 0,
+  extracted_entities jsonb not null default '{}'::jsonb,
+  requires_review boolean not null default true,
+  reason_for_review text,
+  status text not null default 'pending_admin_review',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists draft_business_records (
+  id uuid primary key default gen_random_uuid(),
+  incoming_message_id uuid not null references incoming_messages(id) on delete cascade,
+  extraction_id uuid references message_ai_extractions(id) on delete set null,
+  classification_id uuid references message_classifications(id) on delete cascade,
+  record_type text not null,
+  title text not null,
+  draft_json jsonb not null default '{}'::jsonb,
+  confidence numeric not null default 0,
+  status text not null default 'needs_review',
+  review_notes text,
+  approved_entity_type text,
+  approved_entity_id uuid,
+  approved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists integration_settings (
   id uuid primary key default gen_random_uuid(),
   provider text not null unique,
@@ -349,6 +382,16 @@ begin
 
   if to_regclass('public.verification_queue') is not null then
     create index if not exists idx_verification_queue_status_priority on verification_queue(queue_status, priority);
+  end if;
+
+  if to_regclass('public.message_classifications') is not null then
+    create index if not exists idx_message_classifications_message on message_classifications(incoming_message_id);
+    create index if not exists idx_message_classifications_status on message_classifications(status, created_at desc);
+  end if;
+
+  if to_regclass('public.draft_business_records') is not null then
+    create index if not exists idx_draft_business_records_status on draft_business_records(status, created_at desc);
+    create index if not exists idx_draft_business_records_type on draft_business_records(record_type, status);
   end if;
 
   if to_regclass('public.outlets') is not null then

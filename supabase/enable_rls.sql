@@ -7,6 +7,8 @@ alter table public.outlet_brands enable row level security;
 alter table public.incoming_messages enable row level security;
 alter table public.message_ai_extractions enable row level security;
 alter table public.verification_queue enable row level security;
+alter table public.message_classifications enable row level security;
+alter table public.draft_business_records enable row level security;
 alter table public.visits enable row level security;
 alter table public.skus enable row level security;
 alter table public.orders enable row level security;

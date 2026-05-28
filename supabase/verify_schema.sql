@@ -12,6 +12,8 @@ where table_schema = 'public'
     'incoming_messages',
     'message_ai_extractions',
     'verification_queue',
+    'message_classifications',
+    'draft_business_records',
     'visits',
     'skus',
     'orders',

@@ -11,6 +11,9 @@ import {
   saveAIProviderAction,
   saveOpenAIIntegrationAction,
   saveMetaIntegrationAction,
+  approveVerificationDraftAction,
+  rejectVerificationDraftAction,
+  updateVerificationDraftAction,
   updateBrandAction,
   updateOutletAction,
   updateSalesmanAction,
@@ -35,6 +38,7 @@ export default async function Home() {
     payments: [],
     orders: [],
     bills: [],
+    verificationDrafts: [],
     metaIntegration: {
       displayName: "Meta WhatsApp Cloud API",
       status: "Draft" as const,
@@ -96,7 +100,10 @@ export default async function Home() {
         updateBill: updateBillAction,
         saveMetaIntegration: saveMetaIntegrationAction,
         saveAIProvider: saveAIProviderAction,
-        saveOpenAIIntegration: saveOpenAIIntegrationAction
+        saveOpenAIIntegration: saveOpenAIIntegrationAction,
+        updateVerificationDraft: updateVerificationDraftAction,
+        approveVerificationDraft: approveVerificationDraftAction,
+        rejectVerificationDraft: rejectVerificationDraftAction
       }}
     />
   );

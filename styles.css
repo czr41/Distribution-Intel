@@ -343,6 +343,13 @@ h2 {
   grid-template-columns: minmax(340px, 0.9fr) minmax(420px, 1.1fr);
 }
 
+.verification-workbench {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.72fr) minmax(560px, 1.28fr);
+  gap: 14px;
+  align-items: start;
+}
+
 .panel {
   padding: 20px;
   min-width: 0;
@@ -483,6 +490,21 @@ textarea {
   display: grid;
   gap: 14px;
   margin-top: 16px;
+}
+
+.evidence-split {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.form-success {
+  border: 1px solid rgba(6, 182, 200, 0.28);
+  border-radius: 8px;
+  background: var(--cyan-soft);
+  color: var(--cyan-dark);
+  font-weight: 700;
+  padding: 10px 12px;
 }
 
 .evidence-card {
@@ -866,9 +888,11 @@ textarea {
   .split-layout,
   .inbox-grid,
   .verification-grid,
+  .verification-workbench,
   .ops-grid,
   .integrations-grid,
   .media-lab-grid,
+  .evidence-split,
   .partner-grid {
     grid-template-columns: 1fr;
   }

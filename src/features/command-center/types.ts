@@ -95,6 +95,27 @@ export type BillRow = {
   paymentStatus: "Due" | "Partially paid" | "Paid" | "Overdue" | "Disputed" | "Written off";
 };
 
+export type VerificationDraftRecord = {
+  id: string;
+  recordType: string;
+  title: string;
+  status: "Needs review" | "Approved" | "Rejected";
+  confidence: number;
+  primaryCategory: string;
+  secondaryCategories: string[];
+  reasonForReview: string;
+  rawText: string;
+  transcriptText: string;
+  ocrText: string;
+  draftJson: Record<string, unknown>;
+  outletName: string;
+  brandName: string;
+  amount: number;
+  quantity: string;
+  sku: string;
+  createdAt: string;
+};
+
 export type MetaIntegrationSettings = {
   id?: string;
   displayName: string;
@@ -146,6 +167,7 @@ export type CommandCenterData = {
   payments: PaymentRow[];
   orders: OrderRow[];
   bills: BillRow[];
+  verificationDrafts: VerificationDraftRecord[];
   metaIntegration: MetaIntegrationSettings;
   aiProvider: AIProviderSettings;
   openAIIntegration: OpenAIIntegrationSettings;

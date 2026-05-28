@@ -12,7 +12,8 @@ import type {
   PaymentRow,
   SalesmanRow,
   TaskRow,
-  TerritoryRow
+  TerritoryRow,
+  VerificationDraftRecord
 } from "./types";
 
 type OutletBrandJoin = {
@@ -89,6 +90,28 @@ type BillResult = {
   payment_status: string | null;
   outlets?: { name?: string | null } | { name?: string | null }[] | null;
   brands?: { name?: string | null } | { name?: string | null }[] | null;
+};
+
+type VerificationDraftResult = {
+  id: string;
+  record_type: string;
+  title: string;
+  draft_json: Record<string, unknown> | null;
+  confidence: number | string | null;
+  status: string | null;
+  created_at: string;
+  message_classifications?: {
+    primary_category?: string | null;
+    secondary_categories?: string[] | null;
+    reason_for_review?: string | null;
+  } | { primary_category?: string | null; secondary_categories?: string[] | null; reason_for_review?: string | null }[] | null;
+  message_ai_extractions?: {
+    transcript_text?: string | null;
+    ocr_text?: string | null;
+  } | { transcript_text?: string | null; ocr_text?: string | null }[] | null;
+  incoming_messages?: {
+    text_body?: string | null;
+  } | { text_body?: string | null }[] | null;
 };
 
 type IntegrationSettingsResult = {
@@ -253,6 +276,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     paymentsResult,
     ordersResult,
     billsResult,
+    verificationDraftsResult,
     metaIntegrationResult,
     aiProviderResult
   ] = await Promise.all([
@@ -283,6 +307,12 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       .select("id,bill_number,bill_date,total_amount,payment_status,outlets(name),brands(name)")
       .order("created_at", { ascending: false }),
     supabase
+      .from("draft_business_records")
+      .select("id,record_type,title,draft_json,confidence,status,created_at,message_classifications(primary_category,secondary_categories,reason_for_review),message_ai_extractions(transcript_text,ocr_text),incoming_messages(text_body)")
+      .neq("status", "approved")
+      .order("created_at", { ascending: false })
+      .limit(25),
+    supabase
       .from("integration_settings")
       .select("id,display_name,status,phone_number_id,whatsapp_business_account_id,business_portfolio_id,graph_api_version,webhook_verify_token,access_token,app_secret,last_test_status,last_error,updated_at")
       .eq("provider", "meta_whatsapp")
@@ -303,6 +333,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   if (paymentsResult.error) throw new Error(paymentsResult.error.message);
   if (ordersResult.error) throw new Error(ordersResult.error.message);
   if (billsResult.error) throw new Error(billsResult.error.message);
+  if (verificationDraftsResult.error && verificationDraftsResult.error.code !== "42P01") throw new Error(verificationDraftsResult.error.message);
   if (metaIntegrationResult.error) throw new Error(metaIntegrationResult.error.message);
   if (aiProviderResult.error) throw new Error(aiProviderResult.error.message);
 
@@ -433,6 +464,41 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     };
   });
 
+  const verificationDrafts: VerificationDraftRecord[] = ((verificationDraftsResult.data ?? []) as VerificationDraftResult[]).map((draft) => {
+    const classification = Array.isArray(draft.message_classifications) ? draft.message_classifications[0] : draft.message_classifications;
+    const extraction = Array.isArray(draft.message_ai_extractions) ? draft.message_ai_extractions[0] : draft.message_ai_extractions;
+    const message = Array.isArray(draft.incoming_messages) ? draft.incoming_messages[0] : draft.incoming_messages;
+    const draftJson = draft.draft_json ?? {};
+    const amount = numberValue(
+      typeof draftJson.amount === "number" || typeof draftJson.amount === "string"
+        ? draftJson.amount
+        : typeof draftJson.amount_pending === "number" || typeof draftJson.amount_pending === "string"
+          ? draftJson.amount_pending
+          : 0
+    );
+
+    return {
+      id: draft.id,
+      recordType: draft.record_type,
+      title: draft.title,
+      status: draft.status === "rejected" ? "Rejected" : draft.status === "approved" ? "Approved" : "Needs review",
+      confidence: numberValue(draft.confidence),
+      primaryCategory: classification?.primary_category ?? "unclear",
+      secondaryCategories: classification?.secondary_categories ?? [],
+      reasonForReview: classification?.reason_for_review ?? "Needs admin confirmation",
+      rawText: message?.text_body ?? "",
+      transcriptText: extraction?.transcript_text ?? "",
+      ocrText: extraction?.ocr_text ?? "",
+      draftJson,
+      outletName: typeof draftJson.outlet_name === "string" ? draftJson.outlet_name : "Unassigned",
+      brandName: typeof draftJson.brand_name === "string" ? draftJson.brand_name : "Unassigned",
+      amount,
+      quantity: typeof draftJson.quantity === "string" ? draftJson.quantity : "",
+      sku: typeof draftJson.sku === "string" ? draftJson.sku : "",
+      createdAt: draft.created_at
+    };
+  });
+
   const metaRow = metaIntegrationResult.data as IntegrationSettingsResult | null;
   const metaIntegration: MetaIntegrationSettings = metaRow
     ? {
@@ -487,5 +553,5 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     updatedAt: typeof openAIConfig.updatedAt === "string" && openAIConfig.updatedAt ? openAIConfig.updatedAt : openAIDefaults.updatedAt
   };
 
-  return { records, brands, outlets, salesmen, tasks, territories, payments, orders, bills, metaIntegration, aiProvider, openAIIntegration };
+  return { records, brands, outlets, salesmen, tasks, territories, payments, orders, bills, verificationDrafts, metaIntegration, aiProvider, openAIIntegration };
 }

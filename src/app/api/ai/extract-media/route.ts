@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { FieldMessageType, IncomingMessage } from "@/domain/types";
 import { createAIExtractionProvider } from "@/lib/ai/extraction-provider";
+import { persistClassificationDrafts } from "@/lib/classification/classification-store";
 import { createSupabaseReadClient } from "@/lib/supabase/admin";
 
 type AIProviderRow = {
@@ -244,6 +245,76 @@ async function extractMedia(request: Request) {
     ocrText,
     imageClassification
   });
+  const extractedText = [note, transcriptText, ocrText].filter(Boolean).join("\n\n");
+  let persistedMessageId = "";
+  let classificationSummary: Awaited<ReturnType<typeof persistClassificationDrafts>> | null = null;
+
+  try {
+    const supabase = createSupabaseReadClient();
+    const { data: incoming, error: incomingError } = await supabase
+      .from("incoming_messages")
+      .insert({
+        provider: "media_lab",
+        provider_message_id: message.id,
+        sender_phone: "media-lab",
+        message_type: kind,
+        text_body: note || null,
+        media_storage_path: file?.name ?? null,
+        received_at: message.receivedAt,
+        processing_status: "needs_review",
+        raw_payload_json: {
+          source: "media_lab",
+          fileName: file?.name ?? null,
+          fileType: file?.type ?? null,
+          providerMode,
+          documentLanguage: documentLanguage ?? null
+        }
+      })
+      .select("id")
+      .single();
+
+    if (incomingError) throw new Error(incomingError.message);
+
+    const { data: extraction, error: extractionError } = await supabase
+      .from("message_ai_extractions")
+      .insert({
+        incoming_message_id: incoming.id,
+        extraction_type: structured.category,
+        transcript_text: transcriptText || null,
+        ocr_text: ocrText || null,
+        detected_language: structured.language ?? null,
+        translated_text: transcriptText || null,
+        structured_json: structured,
+        confidence_score: structured.needsHumanReview ? 0.62 : 0.88,
+        status: "needs_review"
+      })
+      .select("id")
+      .single();
+
+    if (extractionError) throw new Error(extractionError.message);
+
+    classificationSummary = await persistClassificationDrafts({
+      supabase,
+      incomingMessageId: incoming.id,
+      extractionId: extraction.id,
+      text: extractedText || note || imageClassification,
+      structured
+    });
+
+    await supabase.from("verification_queue").insert({
+      incoming_message_id: incoming.id,
+      extraction_id: extraction.id,
+      queue_status: "needs_review",
+      priority: classificationSummary.requiresHumanReview ? "high" : "medium",
+      review_notes: classificationSummary.reasonForReview
+    });
+
+    persistedMessageId = incoming.id;
+  } catch (persistError) {
+    fallbackWarning = fallbackWarning
+      ? `${fallbackWarning} Classification draft was not saved: ${errorMessage(persistError)}`
+      : `Classification draft was not saved: ${errorMessage(persistError)}`;
+  }
 
   return NextResponse.json({
     fileName: file?.name ?? "Text only",
@@ -257,7 +328,9 @@ async function extractMedia(request: Request) {
     transcriptText,
     ocrText,
     imageClassification,
-    extractedText: [note, transcriptText, ocrText].filter(Boolean).join("\n\n"),
+    extractedText,
+    persistedMessageId,
+    classification: classificationSummary,
     structured,
     warning: fallbackWarning
       ? fallbackWarning

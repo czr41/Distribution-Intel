@@ -15,7 +15,8 @@ import type {
   PaymentRow,
   SalesmanRow,
   TaskRow,
-  TerritoryRow
+  TerritoryRow,
+  VerificationDraftRecord
 } from "./types";
 
 type View = "command" | "inbox" | "verification" | "media" | "outlets" | "tasks" | "payments" | "orders" | "bills" | "territories" | "reports" | "partners" | "ops" | "integrations";
@@ -32,6 +33,14 @@ type MediaLabResult = {
   ocrText: string;
   imageClassification: string;
   extractedText: string;
+  persistedMessageId?: string;
+  classification?: {
+    primaryCategory: string;
+    secondaryCategories: string[];
+    confidence: number;
+    reasonForReview: string;
+    draftRecords: Array<{ recordType: string; title: string }>;
+  } | null;
   structured: {
     category: string;
     language?: string;
@@ -74,6 +83,9 @@ type CommandCenterActions = {
   saveMetaIntegration: (formData: FormData) => Promise<void>;
   saveAIProvider: (formData: FormData) => Promise<void>;
   saveOpenAIIntegration: (formData: FormData) => Promise<void>;
+  updateVerificationDraft: (formData: FormData) => Promise<VerificationDraftRecord>;
+  approveVerificationDraft: (formData: FormData) => Promise<VerificationDraftRecord>;
+  rejectVerificationDraft: (formData: FormData) => Promise<VerificationDraftRecord>;
 };
 
 const openAIModelOptions = ["gpt-5.5", "gpt-5.5-pro", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-4.1-mini", "gpt-4.1-nano"];
@@ -213,6 +225,9 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const [payments, setPayments] = useState<PaymentRow[]>(initialData.payments);
   const [orders, setOrders] = useState<OrderRow[]>(initialData.orders);
   const [bills, setBills] = useState<BillRow[]>(initialData.bills);
+  const [verificationDrafts, setVerificationDrafts] = useState<VerificationDraftRecord[]>(initialData.verificationDrafts);
+  const [selectedDraftId, setSelectedDraftId] = useState(initialData.verificationDrafts[0]?.id ?? "");
+  const [verificationNotice, setVerificationNotice] = useState<IntegrationNotice | null>(null);
   const [metaIntegration, setMetaIntegration] = useState<MetaIntegrationSettings>(initialData.metaIntegration);
   const [aiProvider, setAIProvider] = useState<AIProviderSettings>(initialData.aiProvider);
   const [openAIIntegration, setOpenAIIntegration] = useState<OpenAIIntegrationSettings>(initialData.openAIIntegration);
@@ -243,6 +258,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       createdAt: "--"
     };
   const pendingCount = records.filter((record) => record.status === "pending").length;
+  const pendingDraftCount = verificationDrafts.filter((draft) => draft.status === "Needs review").length;
   const verifiedCount = records.filter((record) => record.status === "verified").length;
   const highConfidenceCount = records.filter((record) => record.confidence >= 0.85).length;
   const recordCount = Math.max(records.length, 1);
@@ -251,6 +267,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     () => records.filter((record) => record.status === "verified" && (partnerFilter === "all" || record.partner === partnerFilter)),
     [partnerFilter, records]
   );
+  const selectedDraft = verificationDrafts.find((draft) => draft.id === selectedDraftId) ?? verificationDrafts[0];
 
   function openCreate(type: Exclude<ModalType, null>) {
     setEditingItem(null);
@@ -274,6 +291,45 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     setRecords((current) =>
       current.map((record) => (record.id === recordId ? { ...record, status: "needs field clarification" } : record))
     );
+  }
+
+  function updateDraftState(saved: VerificationDraftRecord) {
+    setVerificationDrafts((current) => {
+      const next = current.map((draft) => (draft.id === saved.id ? saved : draft));
+      return next.filter((draft) => draft.status === "Needs review");
+    });
+    setSelectedDraftId((currentId) => {
+      if (saved.status === "Needs review") return saved.id;
+      const nextDraft = verificationDrafts.find((draft) => draft.id !== currentId && draft.status === "Needs review");
+      return nextDraft?.id ?? "";
+    });
+  }
+
+  async function handleVerificationDraft(event: FormEvent<HTMLFormElement>, decision: "save" | "approve" | "reject") {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setVerificationNotice(null);
+
+    try {
+      const saved =
+        decision === "approve"
+          ? await actions.approveVerificationDraft(form)
+          : decision === "reject"
+            ? await actions.rejectVerificationDraft(form)
+            : await actions.updateVerificationDraft(form);
+      updateDraftState(saved);
+      setVerificationNotice({
+        type: "success",
+        message:
+          decision === "approve"
+            ? "Draft approved and written to the relevant module."
+            : decision === "reject"
+              ? "Draft rejected and removed from the active verification queue."
+              : "Draft updates saved for review."
+      });
+    } catch (error) {
+      setVerificationNotice({ type: "error", message: error instanceof Error ? error.message : "Verification action failed." });
+    }
   }
 
   function addFieldMessage(event: FormEvent<HTMLFormElement>) {
@@ -712,7 +768,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         {activeView === "command" && (
           <>
             <section className="metrics-grid">
-              <Metric label="Pending verification" value={pendingCount} detail="Human-in-the-loop queue" />
+              <Metric label="Pending verification" value={pendingDraftCount || pendingCount} detail="Human-in-the-loop queue" />
               <Metric label="Verified outlets" value={verifiedCount} detail="Partner-visible records" />
               <Metric label="Field coverage" value={`${Math.round((verifiedCount / recordCount) * 100)}%`} detail="Beat plan touched today" />
               <Metric label="Extraction accuracy" value={`${Math.round((highConfidenceCount / recordCount) * 100)}%`} detail="AI suggestions accepted" />
@@ -746,18 +802,14 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         )}
 
         {activeView === "verification" && (
-          <section className="verification-grid">
-            <div className="panel">
-              <h2>Raw Evidence</h2>
-              <div className="evidence-card">
-                <span className="tag blue">{selectedRecord.evidence}</span>
-                <h2>{selectedRecord.outlet}</h2>
-                <p>{selectedRecord.message}</p>
-              </div>
-              <div className="evidence-box">Media / OCR / Transcript Preview</div>
-            </div>
-            <RecordDetail record={selectedRecord} onVerify={verifyRecord} onSendBack={sendBack} />
-          </section>
+          <VerificationWorkbench
+            drafts={verificationDrafts}
+            selectedDraft={selectedDraft}
+            selectedDraftId={selectedDraftId}
+            notice={verificationNotice}
+            onSelect={setSelectedDraftId}
+            onSubmit={handleVerificationDraft}
+          />
         )}
 
         {activeView === "media" && <MediaLabView aiProvider={aiProvider} />}
@@ -886,6 +938,118 @@ function RecordDetail({ record, onVerify, onSendBack }: { record: CommandRecord;
         </div>
       </div>
     </div>
+  );
+}
+
+function VerificationWorkbench({
+  drafts,
+  selectedDraft,
+  selectedDraftId,
+  notice,
+  onSelect,
+  onSubmit
+}: {
+  drafts: VerificationDraftRecord[];
+  selectedDraft?: VerificationDraftRecord;
+  selectedDraftId: string;
+  notice: IntegrationNotice | null;
+  onSelect: (id: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>, decision: "save" | "approve" | "reject") => void;
+}) {
+  function submitDraft(event: FormEvent<HTMLFormElement>) {
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const decision = submitter?.value === "approve" || submitter?.value === "reject" ? submitter.value : "save";
+    onSubmit(event, decision);
+  }
+
+  return (
+    <section className="verification-workbench">
+      <div className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Classification Queue</h2>
+            <p>Each extracted message can create multiple editable draft records.</p>
+          </div>
+          <span className="tag blue">{drafts.length} drafts</span>
+        </div>
+        <div className="queue-list">
+          {drafts.length === 0 ? (
+            <div className="empty-state">
+              <strong>No pending drafts</strong>
+              <span>Upload media or receive WhatsApp messages to create classification drafts.</span>
+            </div>
+          ) : (
+            drafts.map((draft) => (
+              <button key={draft.id} className={`queue-item ${selectedDraftId === draft.id ? "active" : ""}`} onClick={() => onSelect(draft.id)}>
+                <div className="queue-top">
+                  <strong>{draft.title}</strong>
+                  <span className={`tag ${draft.confidence < 0.85 ? "warn" : "blue"}`}>{Math.round(draft.confidence * 100)}%</span>
+                </div>
+                <p>{draft.reasonForReview}</p>
+                <div className="record-meta">
+                  <span>{draft.recordType}</span>
+                  <span>{draft.primaryCategory}</span>
+                  <span className="tag">{draft.status}</span>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="panel detail-panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Admin Verification</h2>
+            <p>Edit the AI draft before it updates visits, payments, orders, tasks, outlets, or competitor intel.</p>
+          </div>
+        </div>
+        {notice && <p className={notice.type === "success" ? "form-success" : "form-error"}>{notice.message}</p>}
+        {!selectedDraft ? (
+          <div className="empty-state">
+            <strong>No draft selected</strong>
+            <span>Choose a classification draft from the queue.</span>
+          </div>
+        ) : (
+          <form className="verification-form" onSubmit={submitDraft}>
+            <input type="hidden" name="id" value={selectedDraft.id} />
+            <div className="tag-row">
+              <span className="tag blue">{selectedDraft.primaryCategory}</span>
+              {selectedDraft.secondaryCategories.map((category) => <span className="tag" key={category}>{category}</span>)}
+              <span className={`tag ${selectedDraft.confidence < 0.85 ? "warn" : "blue"}`}>{Math.round(selectedDraft.confidence * 100)}%</span>
+            </div>
+            <div className="form-grid two">
+              <Input name="title" label="Draft title" defaultValue={selectedDraft.title} />
+              <Select name="recordType" label="Record to create" options={["visit", "order", "bill", "payment", "outlet", "feedback", "competitor_insight", "stock_update", "delivery_issue", "task"]} defaultValue={selectedDraft.recordType} />
+              <Input name="outletName" label="Outlet" defaultValue={selectedDraft.outletName} required={false} />
+              <Input name="brandName" label="Brand" defaultValue={selectedDraft.brandName} required={false} />
+              <Input name="amount" label="Amount / value" defaultValue={selectedDraft.amount ? String(selectedDraft.amount) : ""} required={false} />
+              <Input name="quantity" label="Quantity" defaultValue={selectedDraft.quantity} required={false} />
+              <Input name="sku" label="SKU" defaultValue={selectedDraft.sku} required={false} />
+              <Input name="dueDate" label="Due / follow-up date" type="date" required={false} />
+            </div>
+            <div className="form-field">
+              <label htmlFor={`notes-${selectedDraft.id}`}>Admin notes / corrected summary</label>
+              <textarea id={`notes-${selectedDraft.id}`} name="notes" rows={4} defaultValue={String(selectedDraft.draftJson.notes ?? selectedDraft.draftJson.source_text ?? "")} />
+            </div>
+            <div className="form-field">
+              <label htmlFor={`review-${selectedDraft.id}`}>Review notes</label>
+              <textarea id={`review-${selectedDraft.id}`} name="reviewNotes" rows={3} placeholder="Why did you approve, reject, or change this draft?" />
+            </div>
+            <div className="evidence-split">
+              <ResultBlock title="Raw WhatsApp text" value={selectedDraft.rawText || "No raw text."} />
+              <ResultBlock title="Transcript / OCR" value={[selectedDraft.transcriptText, selectedDraft.ocrText].filter(Boolean).join("\n\n") || "No machine text."} />
+              <ResultBlock title="Entities JSON" value={JSON.stringify(selectedDraft.draftJson, null, 2)} />
+            </div>
+            <div className="action-row">
+              <button className="secondary-button" type="submit" name="decision" value="save">Save Edits</button>
+              <button className="approve" type="submit" name="decision" value="approve">Approve & Create Record</button>
+              <button className="reject" type="submit" name="decision" value="reject">Reject Draft</button>
+            </div>
+          </form>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -1021,6 +1185,19 @@ function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
               <Field label="Model" value={result.model} />
             </div>
             {result.warning && <p className="form-error">{result.warning}</p>}
+            {result.persistedMessageId && <p className="form-success">Classification drafts were saved to the admin verification queue. Refresh the page to load the newest queue items.</p>}
+            {result.classification && (
+              <ResultBlock
+                title="Classification"
+                value={JSON.stringify({
+                  primaryCategory: result.classification.primaryCategory,
+                  secondaryCategories: result.classification.secondaryCategories,
+                  confidence: result.classification.confidence,
+                  reasonForReview: result.classification.reasonForReview,
+                  draftRecords: result.classification.draftRecords
+                }, null, 2)}
+              />
+            )}
             <ResultBlock title="Extracted text" value={result.extractedText || "No text extracted yet."} />
             <ResultBlock title="Voice transcript" value={result.transcriptText || "No voice transcript."} />
             <ResultBlock title="OCR text" value={result.ocrText || "No OCR text."} />

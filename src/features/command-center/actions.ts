@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { BillRow, BrandOption, OrderRow, OutletRow, PaymentRow, SalesmanRow, TaskRow, TerritoryRow } from "./types";
+import type { BillRow, BrandOption, OrderRow, OutletRow, PaymentRow, SalesmanRow, TaskRow, TerritoryRow, VerificationDraftRecord } from "./types";
 
 const statusMap = {
   Active: "active",
@@ -160,6 +160,20 @@ const openAIIntegrationSchema = z.object({
   status: z.enum(["Connected", "Draft", "Disabled"])
 });
 
+const verificationDraftSchema = z.object({
+  id: z.string().uuid(),
+  recordType: z.string().min(1),
+  title: z.string().min(1),
+  outletName: z.string().optional(),
+  brandName: z.string().optional(),
+  amount: z.string().optional(),
+  quantity: z.string().optional(),
+  sku: z.string().optional(),
+  notes: z.string().optional(),
+  dueDate: z.string().optional(),
+  reviewNotes: z.string().optional()
+});
+
 function formValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
@@ -229,6 +243,16 @@ function numberInput(value: string) {
   return numeric;
 }
 
+function optionalNumberInput(value?: string) {
+  if (!value) return 0;
+  return numberInput(value);
+}
+
+function numberValue(value?: number | string | null) {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
 async function findBrandIdByName(supabase: ReturnType<typeof createSupabaseAdminClient>, brandName?: string) {
   if (!brandName || brandName === "Unassigned") return null;
   const { data, error } = await supabase.from("brands").select("id").eq("name", brandName).limit(1).maybeSingle();
@@ -241,6 +265,50 @@ async function findOutletIdByName(supabase: ReturnType<typeof createSupabaseAdmi
   const { data, error } = await supabase.from("outlets").select("id").eq("name", outletName).limit(1).maybeSingle();
   if (error) throw new Error(error.message);
   return data?.id ?? null;
+}
+
+function draftStatus(status?: string | null): VerificationDraftRecord["status"] {
+  if (status === "approved") return "Approved";
+  if (status === "rejected") return "Rejected";
+  return "Needs review";
+}
+
+function verificationDraftFromRow(row: {
+  id: string;
+  record_type: string;
+  title: string;
+  status: string | null;
+  confidence: number | string | null;
+  draft_json: Record<string, unknown> | null;
+  created_at: string;
+}, reviewNotes = ""): VerificationDraftRecord {
+  const draftJson = row.draft_json ?? {};
+  return {
+    id: row.id,
+    recordType: row.record_type,
+    title: row.title,
+    status: draftStatus(row.status),
+    confidence: numberValue(row.confidence),
+    primaryCategory: typeof draftJson.category === "string" ? draftJson.category : "unclear",
+    secondaryCategories: Array.isArray(draftJson.secondary_categories) ? draftJson.secondary_categories.map(String) : [],
+    reasonForReview: reviewNotes || "Needs admin confirmation",
+    rawText: typeof draftJson.source_text === "string" ? draftJson.source_text : "",
+    transcriptText: "",
+    ocrText: "",
+    draftJson,
+    outletName: typeof draftJson.outlet_name === "string" ? draftJson.outlet_name : "Unassigned",
+    brandName: typeof draftJson.brand_name === "string" ? draftJson.brand_name : "Unassigned",
+    amount: numberValue(
+      typeof draftJson.amount === "number" || typeof draftJson.amount === "string"
+        ? draftJson.amount
+        : typeof draftJson.amount_pending === "number" || typeof draftJson.amount_pending === "string"
+          ? draftJson.amount_pending
+          : 0
+    ),
+    quantity: typeof draftJson.quantity === "string" ? draftJson.quantity : "",
+    sku: typeof draftJson.sku === "string" ? draftJson.sku : "",
+    createdAt: row.created_at
+  };
 }
 
 async function findOrCreateTerritory(supabase: ReturnType<typeof createSupabaseAdminClient>, name: string, city: string) {
@@ -966,6 +1034,270 @@ export async function updateBillAction(formData: FormData): Promise<BillRow> {
     totalAmount: Number(data.total_amount ?? 0),
     paymentStatus: paymentStatus(data.payment_status)
   };
+}
+
+function draftInput(formData: FormData) {
+  const input = verificationDraftSchema.parse({
+    id: formValue(formData, "id"),
+    recordType: formValue(formData, "recordType"),
+    title: formValue(formData, "title"),
+    outletName: formValue(formData, "outletName"),
+    brandName: formValue(formData, "brandName"),
+    amount: formValue(formData, "amount"),
+    quantity: formValue(formData, "quantity"),
+    sku: formValue(formData, "sku"),
+    notes: formValue(formData, "notes"),
+    dueDate: formValue(formData, "dueDate"),
+    reviewNotes: formValue(formData, "reviewNotes")
+  });
+
+  return {
+    ...input,
+    outletName: input.outletName || "Unassigned",
+    brandName: input.brandName || "Unassigned",
+    amount: input.amount || "0",
+    notes: input.notes || ""
+  };
+}
+
+async function readDraftForDecision(supabase: ReturnType<typeof createSupabaseAdminClient>, id: string) {
+  const { data, error } = await supabase
+    .from("draft_business_records")
+    .select("id,incoming_message_id,record_type,title,draft_json,confidence,status,created_at")
+    .eq("id", id)
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as {
+    id: string;
+    incoming_message_id: string;
+    record_type: string;
+    title: string;
+    draft_json: Record<string, unknown> | null;
+    confidence: number | string | null;
+    status: string | null;
+    created_at: string;
+  };
+}
+
+function editedDraftJson(existing: Record<string, unknown> | null, input: ReturnType<typeof draftInput>) {
+  return {
+    ...(existing ?? {}),
+    outlet_name: input.outletName,
+    brand_name: input.brandName,
+    amount: optionalNumberInput(input.amount),
+    amount_pending: optionalNumberInput(input.amount),
+    quantity: input.quantity || null,
+    sku: input.sku || null,
+    notes: input.notes || null,
+    due_date: input.dueDate || null,
+    admin_review_notes: input.reviewNotes || null
+  };
+}
+
+export async function updateVerificationDraftAction(formData: FormData): Promise<VerificationDraftRecord> {
+  const input = draftInput(formData);
+  const supabase = createSupabaseAdminClient();
+  const current = await readDraftForDecision(supabase, input.id);
+  const draftJson = editedDraftJson(current.draft_json, input);
+
+  const { data, error } = await supabase
+    .from("draft_business_records")
+    .update({
+      record_type: input.recordType,
+      title: input.title,
+      draft_json: draftJson,
+      review_notes: input.reviewNotes || null,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", input.id)
+    .select("id,record_type,title,status,confidence,draft_json,created_at")
+    .single();
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return verificationDraftFromRow(data, input.reviewNotes);
+}
+
+export async function rejectVerificationDraftAction(formData: FormData): Promise<VerificationDraftRecord> {
+  const input = draftInput(formData);
+  const supabase = createSupabaseAdminClient();
+  const current = await readDraftForDecision(supabase, input.id);
+  const draftJson = editedDraftJson(current.draft_json, input);
+
+  const { data, error } = await supabase
+    .from("draft_business_records")
+    .update({
+      record_type: input.recordType,
+      title: input.title,
+      draft_json: draftJson,
+      status: "rejected",
+      review_notes: input.reviewNotes || "Rejected by admin",
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", input.id)
+    .select("id,record_type,title,status,confidence,draft_json,created_at")
+    .single();
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return verificationDraftFromRow(data, input.reviewNotes || "Rejected by admin");
+}
+
+export async function approveVerificationDraftAction(formData: FormData): Promise<VerificationDraftRecord> {
+  const input = draftInput(formData);
+  const supabase = createSupabaseAdminClient();
+  const current = await readDraftForDecision(supabase, input.id);
+  const draftJson = editedDraftJson(current.draft_json, input);
+  const [outletId, brandId] = await Promise.all([
+    findOutletIdByName(supabase, input.outletName),
+    findBrandIdByName(supabase, input.brandName)
+  ]);
+  const amount = optionalNumberInput(input.amount);
+  const now = new Date().toISOString();
+  let approvedEntityType = input.recordType;
+  let approvedEntityId: string | null = null;
+
+  if (input.recordType === "visit") {
+    const { data, error } = await supabase
+      .from("visits")
+      .insert({
+        outlet_id: outletId,
+        visit_datetime: now,
+        visit_type: "routine_visit",
+        productive: amount > 0 || Boolean(input.quantity),
+        outcome: input.notes || input.title,
+        notes: input.notes || String(draftJson.source_text ?? ""),
+        source_message_id: current.incoming_message_id,
+        verified_at: now
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    approvedEntityId = data.id;
+  } else if (input.recordType === "order") {
+    const { data, error } = await supabase
+      .from("orders")
+      .insert({
+        outlet_id: outletId,
+        brand_id: brandId,
+        expected_value: amount,
+        expected_delivery_date: input.dueDate || null,
+        status: "intent_captured",
+        source_message_id: current.incoming_message_id
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    approvedEntityId = data.id;
+  } else if (input.recordType === "bill") {
+    const { data, error } = await supabase
+      .from("bills")
+      .insert({
+        outlet_id: outletId,
+        brand_id: brandId,
+        total_amount: amount,
+        payment_status: "due",
+        ocr_text: String(draftJson.source_text ?? ""),
+        source_message_id: current.incoming_message_id
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    approvedEntityId = data.id;
+  } else if (input.recordType === "payment") {
+    const { data, error } = await supabase
+      .from("payments")
+      .insert({
+        outlet_id: outletId,
+        brand_id: brandId,
+        amount_due: amount,
+        amount_collected: String(draftJson.payment_status ?? "") === "collected" ? amount : 0,
+        due_date: input.dueDate || null,
+        promised_payment_date: input.dueDate || null,
+        status: String(draftJson.payment_status ?? "") === "collected" ? "paid" : "due",
+        risk_level: amount > 10000 ? "high" : "medium",
+        source_message_id: current.incoming_message_id
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    approvedEntityId = data.id;
+  } else if (input.recordType === "outlet") {
+    const existingOutletId = outletId;
+    if (existingOutletId) {
+      approvedEntityId = existingOutletId;
+    } else {
+      const { data, error } = await supabase
+        .from("outlets")
+        .insert({
+          name: input.outletName,
+          city: "Unassigned",
+          status: "prospect",
+          channel_type: "Unassigned"
+        })
+        .select("id")
+        .single();
+      if (error) throw new Error(error.message);
+      approvedEntityId = data.id;
+    }
+  } else if (input.recordType === "competitor_insight") {
+    const { data, error } = await supabase
+      .from("competitor_insights")
+      .insert({
+        brand_id: brandId,
+        outlet_id: outletId,
+        competitor_name: typeof draftJson.competitor_name === "string" && draftJson.competitor_name ? draftJson.competitor_name : "Unassigned competitor",
+        margin_or_scheme: typeof draftJson.competitor_margin === "string" ? draftJson.competitor_margin : null,
+        insight_text: input.notes || String(draftJson.source_text ?? input.title),
+        impact_level: amount > 0 ? "high" : "medium",
+        evidence_message_id: current.incoming_message_id
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    approvedEntityId = data.id;
+  } else {
+    approvedEntityType = "task";
+    const { data, error } = await supabase
+      .from("tasks")
+      .insert({
+        title: input.title,
+        description: input.notes || String(draftJson.source_text ?? ""),
+        task_type: input.recordType,
+        outlet_id: outletId,
+        brand_id: brandId,
+        due_date: input.dueDate || null,
+        priority: current.confidence && Number(current.confidence) < 0.75 ? "high" : "medium",
+        status: "open",
+        source_message_id: current.incoming_message_id
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    approvedEntityId = data.id;
+  }
+
+  const { data, error } = await supabase
+    .from("draft_business_records")
+    .update({
+      record_type: input.recordType,
+      title: input.title,
+      draft_json: draftJson,
+      status: "approved",
+      review_notes: input.reviewNotes || "Approved by admin",
+      approved_entity_type: approvedEntityType,
+      approved_entity_id: approvedEntityId,
+      approved_at: now,
+      updated_at: now
+    })
+    .eq("id", input.id)
+    .select("id,record_type,title,status,confidence,draft_json,created_at")
+    .single();
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return verificationDraftFromRow(data, input.reviewNotes || "Approved by admin");
 }
 
 export async function saveMetaIntegrationAction(formData: FormData) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { IncomingMessage } from "@/domain/types";
 import { createAIExtractionProvider } from "@/lib/ai/extraction-provider";
+import { persistClassificationDrafts } from "@/lib/classification/classification-store";
 import { MetaWhatsAppProvider, parseMetaMediaId, parseMetaWebhookMessages, verifyMetaSignature } from "@/lib/messaging/meta-whatsapp-provider";
 import type { NormalizedIncomingMessage } from "@/lib/providers";
 import { createWhatsAppMediaPath, storeWhatsAppMedia } from "@/lib/storage/whatsapp-media";
@@ -278,11 +279,21 @@ export async function POST(request: Request) {
 
     if (extractionError) throw new Error(extractionError.message);
 
+    const classificationText = [message.textBody, transcriptText, ocrText].filter(Boolean).join("\n\n");
+    const classification = await persistClassificationDrafts({
+      supabase,
+      incomingMessageId: incoming.id,
+      extractionId: extraction.id,
+      text: classificationText || imageClassification || "",
+      structured
+    });
+
     await supabase.from("verification_queue").insert({
       incoming_message_id: incoming.id,
       extraction_id: extraction.id,
       queue_status: "needs_review",
-      priority: structured.needsHumanReview ? "high" : "medium"
+      priority: classification.requiresHumanReview ? "high" : "medium",
+      review_notes: classification.reasonForReview
     });
 
     await supabase.from("incoming_messages").update({ processing_status: "needs_review" }).eq("id", incoming.id);
