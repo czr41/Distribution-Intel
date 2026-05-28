@@ -1080,7 +1080,7 @@ async function readDraftForDecision(supabase: ReturnType<typeof createSupabaseAd
   };
 }
 
-function editedDraftJson(existing: Record<string, unknown> | null, input: ReturnType<typeof draftInput>) {
+function editedDraftJson(existing: Record<string, unknown> | null, input: ReturnType<typeof draftInput>): Record<string, unknown> {
   return {
     ...(existing ?? {}),
     outlet_name: input.outletName,
