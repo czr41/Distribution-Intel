@@ -173,6 +173,7 @@ function numberFromText(value: string) {
 
 function extractEntities(originalText: string, normalizedText: string, structured?: StructuredExtractionResult) {
   const text = `${originalText}\n${normalizedText}`;
+  const outletSourceText = originalText;
   const entityValues = Object.fromEntries(
     Object.entries(structured?.entities ?? {}).map(([key, entity]) => [key, entity?.value])
   );
@@ -188,9 +189,9 @@ function extractEntities(originalText: string, normalizedText: string, structure
   const margin = firstMatch(text, [/(\d+(?:\.\d+)?\s?%\s?(?:margin|scheme|discount)?)/i]);
   const outletName =
     String(entityValues.outlet_name ?? "") ||
-    firstMatch(text, [
-      /(?:visited|met|outlet|shop|store|dukan|dokan|\u0926\u0941\u0915\u093e\u0928|\u0aa6\u0ac1\u0a95\u0abe\u0aa8)[:\s-]*([A-Za-z0-9\u0900-\u097F\u0A80-\u0AFF\u0C80-\u0CFF\u0B80-\u0BFF\u0C00-\u0C7F&.\-\s]{3,55}?)(?: today| asked| owner| pending|$|,|\n)/i,
-      /^([A-Za-z0-9\u0900-\u097F\u0A80-\u0AFF\u0C80-\u0CFF\u0B80-\u0BFF\u0C00-\u0C7F&.\-\s]{3,55}?)(?:\s+(?:store|stores|shop|mart|\u0926\u0941\u0915\u093e\u0928|\u0aa6\u0ac1\u0a95\u0abe\u0aa8))/i
+    firstMatch(outletSourceText, [
+      /(?:visited|met|outlet|shop|store|dukan|dokan|\u0926\u0941\u0915\u093e\u0928|\u0938\u094d\u091f\u094b\u0930|\u0aa6\u0ac1\u0a95\u0abe\u0aa8|\u0ab8\u0acd\u0a9f\u0acb\u0ab0)[:\s-]*([A-Za-z0-9\u0900-\u097F\u0A80-\u0AFF\u0C80-\u0CFF\u0B80-\u0BFF\u0C00-\u0C7F&.\-\s]{3,55}?)(?: today| asked| owner| pending|$|,|\n)/i,
+      /^([A-Za-z0-9\u0900-\u097F\u0A80-\u0AFF\u0C80-\u0CFF\u0B80-\u0BFF\u0C00-\u0C7F&.\-\s]{3,55}?)(?:\s+(?:store|stores|shop|mart|\u0926\u0941\u0915\u093e\u0928|\u0938\u094d\u091f\u094b\u0930|\u0aa6\u0ac1\u0a95\u0abe\u0aa8|\u0ab8\u0acd\u0a9f\u0acb\u0ab0))/i
     ]);
 
   return {
