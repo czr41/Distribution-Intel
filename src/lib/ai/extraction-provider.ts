@@ -476,7 +476,7 @@ class GeminiExtractionProvider implements AIExtractionProvider {
     }
 
     const result = await this.generateJson([
-      { text: "Transcribe and translate this field sales voice note. Return structured JSON for the distribution command center." },
+      { text: "Transcribe and translate this retailer WhatsApp or sales-app voice note. Return structured JSON for the distribution ERP/CRM." },
       { inline_data: { mime_type: input.mimeType, data: await arrayBufferToBase64(bytes) } }
     ]);
 
@@ -511,7 +511,7 @@ class GeminiExtractionProvider implements AIExtractionProvider {
   async extractStructuredData(input: ExtractionInput): Promise<StructuredExtractionResult> {
     return this.generateJson([
       {
-        text: `Convert this WhatsApp field update into JSON for human verification.
+        text: `Convert this retailer WhatsApp or sales-app update into JSON for human verification.
 Message type: ${input.message.messageType}
 Text: ${input.message.textBody ?? ""}
 Transcript: ${input.transcriptText ?? ""}
@@ -969,7 +969,7 @@ class OpenAIExtractionProvider implements AIExtractionProvider {
       const result = (await this.generateJson([
         {
           role: "system",
-          content: "You extract text from Indian field-sales evidence. Return JSON only."
+          content: "You extract text from Indian retailer WhatsApp and sales-app evidence. Return JSON only."
         },
       {
         role: "user",
@@ -1006,7 +1006,7 @@ class OpenAIExtractionProvider implements AIExtractionProvider {
       {
         role: "system",
         content:
-          "You convert WhatsApp field-sales inputs into human-review drafts for a distribution command center. Return JSON only with category, language, summary, entities, suggestedActions, needsHumanReview."
+          "You convert retailer WhatsApp and sales-app inputs into human-review drafts for a distribution ERP/CRM. Return JSON only with category, language, summary, entities, suggestedActions, needsHumanReview."
       },
       {
         role: "user",

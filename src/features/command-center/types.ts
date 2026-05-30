@@ -7,7 +7,7 @@ export type CommandRecord = {
   type: "Sale" | "Stockout" | "Merchandising" | "Order" | "Visit";
   units: number;
   value: number;
-  status: "pending" | "verified" | "needs field clarification";
+  status: "pending" | "verified" | "needs clarification";
   confidence: number;
   evidence: string;
   message: string;

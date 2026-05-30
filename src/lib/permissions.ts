@@ -8,7 +8,7 @@ export type Permission =
   | "view_internal_dashboards"
   | "view_brand_dashboards"
   | "download_reports"
-  | "send_field_messages";
+  | "use_sales_app";
 
 const rolePermissions: Record<UserRole, Permission[]> = {
   super_admin: [
@@ -19,7 +19,7 @@ const rolePermissions: Record<UserRole, Permission[]> = {
     "view_internal_dashboards",
     "view_brand_dashboards",
     "download_reports",
-    "send_field_messages",
+    "use_sales_app",
   ],
   operations_manager: [
     "manage_master_data",
@@ -30,7 +30,7 @@ const rolePermissions: Record<UserRole, Permission[]> = {
     "download_reports",
   ],
   admin_operator: ["manage_master_data", "review_verification_queue", "view_internal_dashboards"],
-  field_executive: ["send_field_messages"],
+  field_executive: ["use_sales_app"],
   brand_partner_viewer: ["view_brand_dashboards", "download_reports"],
   brand_partner_manager: ["view_brand_dashboards", "download_reports"],
 };

@@ -526,7 +526,7 @@ export async function createSalesmanAction(formData: FormData): Promise<Salesman
   });
 
   const supabase = createSupabaseAdminClient();
-  const email = `${input.name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\\.|\\.$/g, "")}.${Date.now()}@field.local`;
+  const email = `${input.name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\\.|\\.$/g, "")}.${Date.now()}@sales-app.local`;
   const territoryId = await findOrCreateTerritory(supabase, input.territory, input.city);
 
   const { data: user, error: userError } = await supabase
@@ -660,7 +660,7 @@ export async function createTaskAction(formData: FormData): Promise<TaskRow> {
   return {
     id: data.id,
     title: data.title,
-    description: data.description ?? "Created from verified field signal.",
+    description: data.description ?? "Created from verified sales or retailer signal.",
     taskType: data.task_type,
     outlet: input.outlet || "Unassigned",
     brand: input.brand || "Unassigned",
@@ -708,7 +708,7 @@ export async function updateTaskAction(formData: FormData): Promise<TaskRow> {
   return {
     id: data.id,
     title: data.title,
-    description: data.description ?? "Created from verified field signal.",
+    description: data.description ?? "Created from verified sales or retailer signal.",
     taskType: data.task_type,
     outlet: input.outlet || "Unassigned",
     brand: input.brand || "Unassigned",

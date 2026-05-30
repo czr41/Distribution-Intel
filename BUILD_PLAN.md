@@ -12,13 +12,14 @@ This repo currently has two layers:
 3. Apply `supabase/schema.sql`.
 4. Add Supabase auth and role mapping.
 5. Move local master-data create flows into server actions:
-   - add salesman / field executive
+   - add sales rep / app user
    - add outlet
    - add brand client
-6. Build WhatsApp webhook ingestion against `MessagingProvider`.
-7. Add AI extraction provider implementation against `AIExtractionProvider`.
-8. Build verification queue from `incoming_messages`, `message_ai_extractions`, and `verification_queue`.
-9. Publish only verified records to brand dashboards.
+6. Build sales-app submission APIs for visits, orders, payments, tasks, outlet onboarding, and evidence upload.
+7. Build retailer WhatsApp webhook ingestion against `MessagingProvider`.
+8. Add AI extraction provider implementation against `AIExtractionProvider`.
+9. Build verification queue from `incoming_messages`, `message_ai_extractions`, and `verification_queue`.
+10. Publish only verified records to brand dashboards.
 
 ## Module Boundaries
 
@@ -54,9 +55,9 @@ app/api/reports/generate
 
 ## Non-Negotiable Data Rules
 
-- Raw incoming WhatsApp messages are immutable.
+- Raw incoming retailer WhatsApp messages and sales-app submissions are immutable.
 - AI drafts are stored separately from verified records.
 - Brand dashboards query verified data only.
 - Important edits create audit logs.
 - Brand partner access must pass `assertBrandAccess`.
-- Provider-specific WhatsApp and AI code stays behind interfaces.
+- Provider-specific WhatsApp, sales-app ingestion, and AI code stays behind interfaces.

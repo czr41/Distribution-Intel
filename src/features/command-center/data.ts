@@ -383,14 +383,14 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     outlet: outlet.name,
     city: outlet.city,
     partner: outlet.brand,
-    fieldAgent: salesmen[index % Math.max(salesmen.length, 1)]?.name ?? "Field Team",
+    fieldAgent: salesmen[index % Math.max(salesmen.length, 1)]?.name ?? "Sales Team",
     type: index === 1 ? "Stockout" : "Sale",
     units: index === 1 ? 0 : 12 + index * 6,
     value: index === 1 ? 0 : (12 + index * 6) * 150,
     status: index < 2 ? "pending" : "verified",
     confidence: index === 1 ? 0.63 : 0.9,
-    evidence: index === 1 ? "Voice note transcription" : "Shelf photo + WhatsApp text",
-    message: index === 1 ? "Retailer reported stock issue and requested refill." : `Field update captured for ${outlet.name}.`,
+    evidence: index === 1 ? "Sales-app voice note transcription" : "Shelf photo + retailer WhatsApp text",
+    message: index === 1 ? "Retailer reported stock issue and requested refill." : `Sales-app update captured for ${outlet.name}.`,
     createdAt: "10:12"
   }));
 
@@ -401,7 +401,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     return {
       id: task.id,
       title: task.title,
-      description: task.description ?? "Created from verified field signal.",
+      description: task.description ?? "Created from verified sales or retailer signal.",
       taskType: task.task_type,
       outlet: outlet?.name ?? "Unassigned",
       brand: brand?.name ?? "Unassigned",

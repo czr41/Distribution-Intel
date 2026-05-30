@@ -98,8 +98,8 @@ function withSelectedOption(options: string[], selected: string) {
 }
 
 const viewTitles: Record<View, string> = {
-  command: "Command Center",
-  inbox: "WhatsApp Inbox",
+  command: "ERP / CRM Command Center",
+  inbox: "Retailer WhatsApp",
   verification: "Verification Queue",
   media: "Media Extraction Lab",
   outlets: "Outlet Master",
@@ -110,7 +110,7 @@ const viewTitles: Record<View, string> = {
   territories: "Territories",
   reports: "Reports",
   partners: "Brand Partner Dashboard",
-  ops: "Operations Model",
+  ops: "Sales App & Team",
   integrations: "Integrations"
 };
 
@@ -128,8 +128,8 @@ const bulkTemplates: Record<BulkImportType, { title: string; filename: string; c
     sample: ["NourishCo", "Packaged foods", "Ananya Rao", "Active"]
   },
   salesman: {
-    title: "Salesman Bulk Import",
-    filename: "shipd2r-salesman-import-template.csv",
+    title: "Sales Rep Bulk Import",
+    filename: "shipd2r-sales-rep-import-template.csv",
     columns: ["name", "phone", "city", "territory", "status"],
     sample: ["Rahul Sharma", "9876543201", "Pune", "Pune West", "Active"]
   },
@@ -249,14 +249,14 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       outlet: "No records yet",
       city: "Unassigned",
       partner: "Unassigned",
-      fieldAgent: "Field Team",
+      fieldAgent: "Sales Team",
       type: "Visit",
       units: 0,
       value: 0,
       status: "pending",
       confidence: 0,
       evidence: "No evidence",
-      message: "Add outlets and WhatsApp messages to populate the queue.",
+      message: "Add outlets, sales-app activity, or retailer WhatsApp messages to populate the queue.",
       createdAt: "--"
     };
   const pendingCount = records.filter((record) => record.status === "pending").length;
@@ -291,7 +291,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
 
   function sendBack(recordId: string) {
     setRecords((current) =>
-      current.map((record) => (record.id === recordId ? { ...record, status: "needs field clarification" } : record))
+      current.map((record) => (record.id === recordId ? { ...record, status: "needs clarification" } : record))
     );
   }
 
@@ -347,13 +347,13 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       outlet: outletMatch?.[1]?.trim() ?? "Unmatched Outlet",
       city: messageText.toLowerCase().includes("mumbai") ? "Mumbai" : messageText.toLowerCase().includes("pune") ? "Pune" : "Unconfirmed",
       partner,
-      fieldAgent: "Field Team",
+      fieldAgent: "Sales App",
       type: units > 0 ? "Sale" : "Visit",
       units,
       value: units * 150,
       status: "pending",
       confidence: outletMatch && unitsMatch ? 0.86 : 0.58,
-      evidence: messageText.toLowerCase().includes("photo") ? "WhatsApp text + media mention" : "WhatsApp text",
+      evidence: messageText.toLowerCase().includes("photo") ? "Retailer WhatsApp + media mention" : "Retailer WhatsApp text",
       message: messageText,
       createdAt: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
     };
@@ -682,7 +682,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Verify Next", action: () => pendingRecord && verifyRecord(pendingRecord.id), disabled: !pendingRecord }
     ],
     inbox: [
-      { label: "Log Field Message", action: () => setActiveView("inbox") },
+      { label: "Log Retailer WhatsApp", action: () => setActiveView("inbox") },
       { label: "Verify Next", action: () => pendingRecord && verifyRecord(pendingRecord.id), disabled: !pendingRecord }
     ],
     verification: [
@@ -723,7 +723,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Bulk Import", action: () => openBulkImport("brand") }
     ],
     ops: [
-      { label: "Add Salesman", action: () => openCreate("salesman") },
+      { label: "Add Sales Rep", action: () => openCreate("salesman") },
       { label: "Bulk Import", action: () => openBulkImport("salesman") }
     ],
     integrations: [{ label: "Copy Webhook Path", action: () => navigator.clipboard?.writeText(metaIntegration.webhookUrl) }]
@@ -734,12 +734,12 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       <aside className="sidebar" aria-label="Primary">
         <div className="brand">
           <img src="/brand/shipd2r-logo.png" alt="shipd2r" />
-          <span>Direct-to-retailer command center</span>
+          <span>Distribution ERP / CRM</span>
         </div>
         <nav className="nav-tabs" aria-label="Views">
           {(Object.keys(viewTitles) as View[]).map((view) => (
             <button key={view} className={`nav-tab ${activeView === view ? "active" : ""}`} onClick={() => setActiveView(view)}>
-              <span>{view === "ops" ? "Ops" : view[0].toUpperCase() + view.slice(1)}</span>
+              <span>{view === "ops" ? "Sales App" : view === "inbox" ? "Retailer WhatsApp" : view[0].toUpperCase() + view.slice(1)}</span>
             </button>
           ))}
         </nav>
@@ -755,7 +755,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
 
         <header className="topbar">
           <div>
-            <p className="eyebrow">Shipd2r distribution intelligence</p>
+            <p className="eyebrow">Shipd2r central ERP / CRM</p>
             <h1>{viewTitles[activeView]}</h1>
           </div>
           <div className="topbar-actions">
@@ -772,7 +772,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
             <section className="metrics-grid">
               <Metric label="Pending verification" value={pendingDraftCount || pendingCount} detail="Human-in-the-loop queue" />
               <Metric label="Verified outlets" value={verifiedCount} detail="Partner-visible records" />
-              <Metric label="Field coverage" value={`${Math.round((verifiedCount / recordCount) * 100)}%`} detail="Beat plan touched today" />
+              <Metric label="Sales app coverage" value={`${Math.round((verifiedCount / recordCount) * 100)}%`} detail="Beat plan touched today" />
               <Metric label="Extraction accuracy" value={`${Math.round((highConfidenceCount / recordCount) * 100)}%`} detail="AI suggestions accepted" />
             </section>
             <section className="split-layout">
@@ -786,7 +786,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           <section className="inbox-grid">
             <QueuePanel records={records} selectedId={selectedId} onSelect={setSelectedId} />
             <div className="phone-frame">
-              <div className="phone-header">Field WhatsApp</div>
+              <div className="phone-header">Retailer WhatsApp</div>
               <div className="chat-feed">
                 {records.slice(0, 4).map((record) => (
                   <div className="message" key={record.id}>
@@ -795,7 +795,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
                 ))}
               </div>
               <form className="chat-composer" onSubmit={addFieldMessage}>
-                <input value={messageText} onChange={(event) => setMessageText(event.target.value)} placeholder="Outlet: Raj Stores, 24 units, paid cash, shelf photo ok" />
+                <input value={messageText} onChange={(event) => setMessageText(event.target.value)} placeholder="Outlet: Raj Stores, need 24 units, payment pending, send scheme details" />
                 <button type="submit">Send</button>
               </form>
             </div>
@@ -884,7 +884,7 @@ function QueuePanel({ records, selectedId, onSelect }: { records: CommandRecord[
       <div className="panel-heading">
         <div>
           <h2>Verification Queue</h2>
-          <p>AI extracts field signals. Ops confirms what becomes official.</p>
+          <p>AI extracts retailer and sales-app signals. Ops confirms what becomes official.</p>
         </div>
       </div>
       <div className="queue-list">
@@ -923,7 +923,7 @@ function RecordDetail({ record, onVerify, onSendBack }: { record: CommandRecord;
         </div>
         <div className="field-grid">
           <Field label="Partner" value={record.partner} />
-          <Field label="Field agent" value={record.fieldAgent} />
+          <Field label="Sales rep / source" value={record.fieldAgent} />
           <Field label="Units" value={record.units} />
           <Field label="Value" value={money(record.value)} />
           <Field label="City" value={record.city} />
@@ -978,7 +978,7 @@ function VerificationWorkbench({
           {drafts.length === 0 ? (
             <div className="empty-state">
               <strong>No pending drafts</strong>
-              <span>Upload media or receive WhatsApp messages to create classification drafts.</span>
+              <span>Upload sales-app evidence or receive retailer WhatsApp messages to create classification drafts.</span>
             </div>
           ) : (
             drafts.map((draft) => (
@@ -1041,7 +1041,7 @@ function VerificationWorkbench({
               <textarea id={`review-${selectedDraft.id}`} name="reviewNotes" rows={3} placeholder="Why did you approve, reject, or change this draft?" />
             </div>
             <div className="evidence-split">
-              <ResultBlock title="Raw WhatsApp text" value={selectedDraft.rawText || "No raw text."} />
+              <ResultBlock title="Raw source text" value={selectedDraft.rawText || "No raw text."} />
               <ResultBlock title="English normalized text" value={selectedDraft.normalizedText || "No normalized text."} />
               <ResultBlock title="Transcript / OCR" value={[selectedDraft.transcriptText, selectedDraft.ocrText].filter(Boolean).join("\n\n") || "No machine text."} />
               <ResultBlock title="Entities JSON" value={JSON.stringify(selectedDraft.draftJson, null, 2)} />
@@ -1093,7 +1093,7 @@ function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
     const note = String(form.get("note") ?? "").trim();
 
     if ((!file || file.size === 0) && !note) {
-      setError("Upload a file or paste a field message first.");
+      setError("Upload a file or paste a retailer/sales-app message first.");
       return;
     }
 
@@ -1134,8 +1134,8 @@ function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
       <article className="panel media-upload-panel">
         <div className="panel-heading">
           <div>
-            <h2>Upload Field Evidence</h2>
-            <p>Test WhatsApp-style voice notes, bill images, PDFs, shelf photos, payment screenshots, or text updates before wiring them into verification.</p>
+            <h2>Upload Source Evidence</h2>
+            <p>Test retailer WhatsApp media, sales-app visit proof, bill images, PDFs, shelf photos, payment screenshots, or text updates before verification.</p>
           </div>
           <span className={`tag ${aiProvider.status === "Connected" ? "blue" : "warn"}`}>{aiProvider.provider}</span>
         </div>
@@ -1146,8 +1146,8 @@ function MediaLabView({ aiProvider }: { aiProvider: AIProviderSettings }) {
             <input name="file" type="file" accept="image/*,audio/*,application/pdf,video/*" />
           </div>
           <div className="form-field">
-            <label htmlFor="media-note">Optional field message</label>
-            <textarea id="media-note" name="note" rows={6} placeholder="Example: Outlet Raj Stores, bill uploaded, payment pending 12400, ask Ramesh to follow up tomorrow." />
+            <label htmlFor="media-note">Optional source message</label>
+            <textarea id="media-note" name="note" rows={6} placeholder="Example: Retailer Raj Stores needs 24 units, payment pending 12400, assign Ramesh from the sales app to follow up tomorrow." />
           </div>
           <div className="form-grid two">
             <Select name="providerMode" label="Extraction provider" options={["Auto", "Sarvam", "OpenAI"]} defaultValue="Auto" />
@@ -1348,15 +1348,15 @@ function OpsView({ salesmen, onAdd, onEdit, onBulkImport }: { salesmen: Salesman
       <article className="panel">
         <div className="panel-heading">
           <div>
-            <h2>Field Team</h2>
-            <p>Sales executives mapped to territories and WhatsApp numbers.</p>
+            <h2>Sales App Users</h2>
+            <p>Sales reps mapped to territories. They use the app for visits, orders, payments, tasks, and market notes.</p>
           </div>
           <div className="panel-actions">
             <button className="secondary-button" onClick={onBulkImport}>
               Bulk Import
             </button>
             <button className="primary-button" onClick={onAdd}>
-              Add Salesman
+              Add Sales Rep
             </button>
           </div>
         </div>
@@ -1375,12 +1375,13 @@ function OpsView({ salesmen, onAdd, onEdit, onBulkImport }: { salesmen: Salesman
         </div>
       </article>
       <article className="panel">
-        <h2>System Model</h2>
+        <h2>Operating Model</h2>
         <ul className="clean-list">
-          <li><strong>Field:</strong> WhatsApp messages, images, voice notes, and location pings.</li>
-          <li><strong>Backend:</strong> ingestion, extraction, confidence scoring, task assignment.</li>
-          <li><strong>Internal:</strong> command center for verification and exception handling.</li>
-          <li><strong>Partners:</strong> verified dashboards and approved reports.</li>
+          <li><strong>Central ERP / CRM:</strong> source of truth for clients, outlets, visits, orders, bills, payments, tasks, and reports.</li>
+          <li><strong>Sales App:</strong> rep-facing workflow for beat visits, order capture, payment follow-up, outlet onboarding, and evidence upload.</li>
+          <li><strong>Retailer WhatsApp:</strong> retailer-facing channel for orders, payment screenshots, complaints, stock requests, and scheme questions.</li>
+          <li><strong>Admin Verification:</strong> AI extraction and human review before records become official or partner-visible.</li>
+          <li><strong>Brand Partners:</strong> verified dashboards, exports, and approved reports only.</li>
         </ul>
       </article>
     </section>
@@ -1394,7 +1395,7 @@ function TasksView({ tasks, onAdd, onEdit, onBulkImport }: { tasks: TaskRow[]; o
         <div className="panel-heading">
           <div>
             <h2>Tasks & Follow-Ups</h2>
-            <p>Manual and AI-created follow-ups for payments, orders, complaints, and field action.</p>
+            <p>Manual and AI-created follow-ups for payments, orders, complaints, and sales action.</p>
           </div>
           <div className="panel-actions">
             <button className="secondary-button" onClick={onBulkImport}>
@@ -1511,7 +1512,7 @@ function OrdersView({ orders, onAdd, onEdit, onBulkImport }: { orders: OrderRow[
 
 function BillsView({ bills, onAdd, onEdit, onBulkImport }: { bills: BillRow[]; onAdd: () => void; onEdit: (bill: BillRow) => void; onBulkImport: () => void }) {
   return (
-    <CrudPanel title="Bills" description="Invoice records captured from field updates, photos, or admin entry." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Bill">
+    <CrudPanel title="Bills" description="Invoice records captured from sales-app updates, retailer WhatsApp, photos, or admin entry." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Bill">
       {bills.map((bill) => (
         <article className="task-row" key={bill.id}>
           <div className="queue-top">
@@ -1613,7 +1614,7 @@ function IntegrationsView({
         <div className="panel-heading">
           <div>
             <h2>Meta WhatsApp Cloud API</h2>
-            <p>Connect the official Meta account that receives field messages and sends reminders.</p>
+            <p>Connect the official Meta account that receives retailer WhatsApp messages and sends confirmations or reminders.</p>
           </div>
           <span className={`tag ${metaIntegration.status === "Connected" ? "blue" : "warn"}`}>{metaIntegration.status}</span>
         </div>
@@ -1784,7 +1785,7 @@ function MasterDataModal({
     type === "brand"
       ? "Brand Client"
       : type === "salesman"
-        ? "Salesman"
+        ? "Sales Rep"
         : type === "territory"
           ? "Territory"
           : type === "payment"
@@ -1842,8 +1843,8 @@ function MasterDataModal({
             )}
             {type === "salesman" && (
               <>
-                <Input name="name" label="Salesman name" defaultValue={salesmanValues?.name} />
-                <Input name="phone" label="WhatsApp number" defaultValue={salesmanValues?.phone} />
+                <Input name="name" label="Sales rep name" defaultValue={salesmanValues?.name} />
+                <Input name="phone" label="App login / phone" defaultValue={salesmanValues?.phone} />
                 <Input name="city" label="City" defaultValue={salesmanValues?.city} />
                 <Input name="territory" label="Territory" defaultValue={salesmanValues?.territory} />
                 <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={salesmanValues?.status} />

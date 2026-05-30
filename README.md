@@ -2,13 +2,14 @@
 
 This is the first executable MVP slice for the build brief:
 
-> Field team uses WhatsApp. Internal team uses command center. Brand partners see verified dashboards.
+> Central ERP/CRM is the source of truth. Sales team uses the sales app. Retailers use WhatsApp. Brand partners see verified dashboards.
 
 The current implementation is a deployed Next.js command-center MVP backed by Supabase.
 
 ## What Is Built
 
-- WhatsApp-style field intake and Meta webhook route
+- Retailer WhatsApp intake and Meta webhook route
+- Sales-app oriented workflow model for visits, orders, payments, tasks, and evidence capture
 - AI extraction provider settings for Sarvam AI, OpenAI, and Gemini
 - Human-in-the-loop verification queue
 - Internal command center metrics
@@ -23,9 +24,9 @@ Production app:
 https://distribution-intel.vercel.app
 ```
 
-The prototype now supports adding:
+The current app supports adding:
 
-- Salesman / field executive from `Ops`
+- Sales rep / app user from `Sales App & Team`
 - Outlet from `Outlets`
 - Client / brand from `Partners`
 
@@ -65,7 +66,7 @@ See `CLOUD_DEPLOY.md` for Supabase, Vercel, and environment variable setup.
 - Database: Postgres with Prisma or SQLAlchemy
 - Queue: BullMQ, Temporal, or Cloud Tasks
 - Storage: S3-compatible object storage for images and voice notes
-- Messaging: WhatsApp Cloud API, Gupshup, or Twilio behind a provider interface
+- Messaging: WhatsApp Cloud API, Gupshup, or Twilio for retailer conversations behind a provider interface
 - AI: Sarvam AI for Indian-language voice transcription and Sarvam Vision document OCR, with OpenAI/Gemini as fallback providers behind a swappable provider interface
 - Analytics: Postgres views first, then warehouse/BI when volume grows
 
@@ -73,11 +74,11 @@ See `BUILD_PLAN.md`, `src/domain/types.ts`, `src/lib/providers.ts`, `src/lib/per
 
 ## Core Domain Tables
 
-- `users`: internal operators, admins, partner users, field managers
-- `field_agents`: WhatsApp identity, territory, manager, status
+- `users`: internal operators, admins, partner users, sales reps, and managers
+- `field_agents`: sales-app identity, territory, manager, status
 - `partners`: brand partner profile and dashboard permissions
 - `outlets`: retailer profile, geo, route, verification state
-- `field_messages`: raw WhatsApp text/media payloads
+- `field_messages`: raw retailer WhatsApp and sales-app text/media payloads
 - `extractions`: AI-produced structured facts, confidence, model metadata
 - `verification_tasks`: human review state, assignee, decision history
 - `events`: verified sales, stockouts, merchandising, visits, orders
@@ -88,11 +89,11 @@ See `BUILD_PLAN.md`, `src/domain/types.ts`, `src/lib/providers.ts`, `src/lib/per
 ```ts
 interface MessagingProvider {
   sendMessage(to: string, body: string): Promise<void>;
-  parseWebhook(payload: unknown): Promise<FieldMessage>;
+  parseWebhook(payload: unknown): Promise<SourceMessage>;
 }
 
 interface ExtractionProvider {
-  extract(message: FieldMessage): Promise<ExtractionResult>;
+  extract(message: SourceMessage): Promise<ExtractionResult>;
 }
 
 interface EvidenceStorageProvider {
@@ -107,7 +108,7 @@ interface DashboardPublisher {
 ## Build Phases
 
 1. Replace prototype state with a typed API and database schema.
-2. Add WhatsApp webhook ingestion and media storage.
+2. Add retailer WhatsApp webhook ingestion, sales-app submission APIs, and media storage.
 3. Add AI extraction with confidence scoring and audit logs.
 4. Build internal verification workflows, assignments, and comments.
 5. Build partner auth, dashboard filters, exports, and verified-only metrics.
@@ -115,8 +116,9 @@ interface DashboardPublisher {
 
 ## MVP Acceptance Criteria
 
-- A field agent can send a WhatsApp update in natural language.
-- The backend stores the raw message and extracts a structured candidate record.
+- A sales rep can use the sales app to submit visits, orders, payments, and evidence.
+- A retailer can send WhatsApp messages, bill/payment screenshots, complaints, and stock requests.
+- The backend stores the raw source input and extracts a structured candidate record.
 - Low-confidence or partner-visible records enter a verification queue.
-- Internal ops can approve or send records back for clarification.
+- Internal ops can approve records or ask either the sales rep or retailer for clarification.
 - Brand partners only see verified metrics and evidence.

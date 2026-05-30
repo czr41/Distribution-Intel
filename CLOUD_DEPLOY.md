@@ -83,7 +83,7 @@ Install Command: npm install
 Output Directory: .next
 ```
 
-## 4. WhatsApp Webhook
+## 4. Retailer WhatsApp Webhook
 
 After Vercel deploys, the webhook route target will be:
 
@@ -95,7 +95,7 @@ The route currently:
 
 1. Verifies the Meta webhook signature/token.
 2. Stores raw payloads in `incoming_messages`.
-3. Downloads and stores WhatsApp media.
+3. Downloads and stores retailer WhatsApp media.
 4. Dispatches AI extraction.
 5. Creates `verification_queue` items.
 
