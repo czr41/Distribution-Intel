@@ -57,6 +57,7 @@ type MediaLabResult = {
 type ModalType = "outlet" | "brand" | "salesman" | "user" | "task" | "territory" | "payment" | "order" | "bill" | null;
 type BulkImportType = Exclude<ModalType, null>;
 type IntegrationNotice = { type: "success" | "error"; message: string };
+type SalesWorkflow = "visit" | "order" | "payment" | "evidence";
 type EditableMasterData =
   | { type: "outlet"; record: OutletRow }
   | { type: "brand"; record: BrandOption }
@@ -331,14 +332,51 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     return <LoginScreen users={users} error={loginError} onLogin={login} />;
   }
 
+  async function createSalesVisit(form: FormData) {
+    const outlet = String(form.get("outlet") ?? "").trim();
+    const brand = String(form.get("brand") ?? "").trim();
+    const outcome = String(form.get("outcome") ?? "").trim();
+    form.set("title", `Visit logged - ${outlet || "Outlet"}`);
+    form.set("description", outcome || "Sales executive logged a field visit from the sales app.");
+    form.set("taskType", "Routine visit");
+    form.set("priority", "Medium");
+    form.set("status", "Completed");
+    form.set("outlet", outlet);
+    form.set("brand", brand);
+    const saved = await actions.createTask(form);
+    setTasks((current) => [saved, ...current]);
+    return saved;
+  }
+
+  async function createSalesOrder(form: FormData) {
+    form.set("status", "Intent captured");
+    const saved = await actions.createOrder(form);
+    setOrders((current) => [saved, ...current]);
+    return saved;
+  }
+
+  async function createSalesPayment(form: FormData) {
+    const amountCollected = Number(String(form.get("amountCollected") ?? "0"));
+    const amountDue = Number(String(form.get("amountDue") ?? "0"));
+    form.set("status", amountCollected > 0 && amountCollected >= amountDue ? "Paid" : amountCollected > 0 ? "Partially paid" : "Due");
+    form.set("riskLevel", amountDue - amountCollected > 10000 ? "High" : "Medium");
+    const saved = await actions.createPayment(form);
+    setPayments((current) => [saved, ...current]);
+    return saved;
+  }
+
   if (userAccessKind(currentUser) === "sales") {
     return (
       <SalesRepPortal
         user={currentUser}
+        brands={brands}
         tasks={tasks}
         outlets={outlets}
         orders={orders}
         payments={payments}
+        onCreateVisit={createSalesVisit}
+        onCreateOrder={createSalesOrder}
+        onCreatePayment={createSalesPayment}
         onLogout={() => setCurrentUser(null)}
       />
     );
@@ -1226,19 +1264,110 @@ function LoginScreen({ users, error, onLogin }: { users: AppUserRow[]; error: st
 
 function SalesRepPortal({
   user,
+  brands,
   tasks,
   outlets,
   orders,
   payments,
+  onCreateVisit,
+  onCreateOrder,
+  onCreatePayment,
   onLogout
 }: {
   user: AppUserRow;
+  brands: BrandOption[];
   tasks: TaskRow[];
   outlets: OutletRow[];
   orders: OrderRow[];
   payments: PaymentRow[];
+  onCreateVisit: (formData: FormData) => Promise<TaskRow>;
+  onCreateOrder: (formData: FormData) => Promise<OrderRow>;
+  onCreatePayment: (formData: FormData) => Promise<PaymentRow>;
   onLogout: () => void;
 }) {
+  const [activeWorkflow, setActiveWorkflow] = useState<SalesWorkflow>("visit");
+  const [notice, setNotice] = useState<IntegrationNotice | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [evidenceResult, setEvidenceResult] = useState<MediaLabResult | null>(null);
+  const outletOptions = outlets.length ? outlets.map((outlet) => outlet.name) : ["Unassigned"];
+  const brandOptions = brands.length ? brands.map((brand) => brand.name) : ["Unassigned"];
+
+  async function submitVisit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setNotice(null);
+    setIsSubmitting(true);
+    try {
+      await onCreateVisit(new FormData(formElement));
+      formElement.reset();
+      setNotice({ type: "success", message: "Visit logged successfully." });
+    } catch (error) {
+      setNotice({ type: "error", message: error instanceof Error ? error.message : "Visit could not be logged." });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function submitOrder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setNotice(null);
+    setIsSubmitting(true);
+    try {
+      await onCreateOrder(new FormData(formElement));
+      formElement.reset();
+      setNotice({ type: "success", message: "Order intent captured." });
+    } catch (error) {
+      setNotice({ type: "error", message: error instanceof Error ? error.message : "Order could not be captured." });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function submitPayment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setNotice(null);
+    setIsSubmitting(true);
+    try {
+      await onCreatePayment(new FormData(formElement));
+      formElement.reset();
+      setNotice({ type: "success", message: "Payment update saved." });
+    } catch (error) {
+      setNotice({ type: "error", message: error instanceof Error ? error.message : "Payment could not be saved." });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function submitEvidence(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setNotice(null);
+    setEvidenceResult(null);
+    setIsSubmitting(true);
+    try {
+      const form = new FormData(formElement);
+      form.set("providerMode", "auto");
+      form.set("sarvamLanguage", "auto");
+      const response = await fetch("/api/ai/extract-media", { method: "POST", body: form });
+      const body = await response.json();
+      if (!response.ok) throw new Error(typeof body?.error === "string" ? body.error : "Evidence extraction failed.");
+      const result = body as MediaLabResult;
+      setEvidenceResult(result);
+      setNotice({
+        type: "success",
+        message: result.persistedMessageId
+          ? "Evidence uploaded and sent to admin verification."
+          : "Evidence extracted. Admin can review the resulting text."
+      });
+    } catch (error) {
+      setNotice({ type: "error", message: error instanceof Error ? error.message : "Evidence could not be uploaded." });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <main className="sales-app-shell">
       <header className="sales-app-topbar">
@@ -1264,10 +1393,82 @@ function SalesRepPortal({
             </div>
           </div>
           <div className="sales-action-grid">
-            <button className="primary-button">Start Visit</button>
-            <button className="primary-button">Create Order</button>
-            <button className="primary-button">Collect Payment</button>
-            <button className="primary-button">Upload Evidence</button>
+            <button className="primary-button" onClick={() => setActiveWorkflow("visit")}>Start Visit</button>
+            <button className="primary-button" onClick={() => setActiveWorkflow("order")}>Create Order</button>
+            <button className="primary-button" onClick={() => setActiveWorkflow("payment")}>Collect Payment</button>
+            <button className="primary-button" onClick={() => setActiveWorkflow("evidence")}>Upload Evidence</button>
+          </div>
+          {notice && <p className={`inline-notice ${notice.type}`} role="status">{notice.message}</p>}
+          <div className="sales-workflow-panel">
+            {activeWorkflow === "visit" && (
+              <form className="master-form" onSubmit={submitVisit}>
+                <div className="form-grid">
+                  <Select name="outlet" label="Outlet" options={outletOptions} />
+                  <Select name="brand" label="Client / brand" options={brandOptions} />
+                  <Input name="dueDate" label="Follow-up date" type="date" required={false} />
+                  <div className="form-field wide">
+                    <label htmlFor="outcome">Visit notes</label>
+                    <textarea id="outcome" name="outcome" placeholder="Owner feedback, stock issue, order expected, payment reminder, competitor note" required />
+                  </div>
+                </div>
+                <div className="action-row">
+                  <button className="approve" disabled={isSubmitting} type="submit">Save Visit</button>
+                </div>
+              </form>
+            )}
+
+            {activeWorkflow === "order" && (
+              <form className="master-form" onSubmit={submitOrder}>
+                <div className="form-grid">
+                  <Select name="outlet" label="Outlet" options={outletOptions} />
+                  <Select name="brand" label="Client / brand" options={brandOptions} />
+                  <Input name="expectedValue" label="Expected value" type="number" placeholder="8500" />
+                  <Input name="expectedDeliveryDate" label="Expected delivery" type="date" required={false} />
+                </div>
+                <div className="action-row">
+                  <button className="approve" disabled={isSubmitting} type="submit">Capture Order</button>
+                </div>
+              </form>
+            )}
+
+            {activeWorkflow === "payment" && (
+              <form className="master-form" onSubmit={submitPayment}>
+                <div className="form-grid">
+                  <Select name="outlet" label="Outlet" options={outletOptions} />
+                  <Select name="brand" label="Client / brand" options={brandOptions} />
+                  <Input name="amountDue" label="Amount due" type="number" placeholder="12400" />
+                  <Input name="amountCollected" label="Amount collected" type="number" placeholder="5000" required={false} />
+                  <Input name="dueDate" label="Due date" type="date" required={false} />
+                  <Input name="promisedPaymentDate" label="Promised date" type="date" required={false} />
+                  <Input name="paymentMode" label="Payment mode" placeholder="UPI / Cash / Bank transfer" required={false} />
+                </div>
+                <div className="action-row">
+                  <button className="approve" disabled={isSubmitting} type="submit">Save Payment</button>
+                </div>
+              </form>
+            )}
+
+            {activeWorkflow === "evidence" && (
+              <form className="master-form" onSubmit={submitEvidence}>
+                <div className="form-grid">
+                  <div className="form-field">
+                    <label htmlFor="sales-evidence-file">Photo, bill, voice note, or PDF</label>
+                    <input id="sales-evidence-file" name="file" type="file" accept="image/*,audio/*,application/pdf" required />
+                  </div>
+                  <Input name="note" label="Context note" placeholder="Outlet, brand, payment/order context" required={false} />
+                </div>
+                <div className="action-row">
+                  <button className="approve" disabled={isSubmitting} type="submit">Upload Evidence</button>
+                </div>
+                {evidenceResult && (
+                  <div className="sales-evidence-result">
+                    <strong>{evidenceResult.classification?.primaryCategory ?? evidenceResult.structured.category}</strong>
+                    <p>{evidenceResult.extractedText || evidenceResult.ocrText || evidenceResult.transcriptText || "No text extracted."}</p>
+                    {evidenceResult.persistedMessageId && <span className="tag blue">Sent to admin review</span>}
+                  </div>
+                )}
+              </form>
+            )}
           </div>
         </article>
         <article className="panel">

@@ -301,6 +301,29 @@ h2 {
   margin-top: 16px;
 }
 
+.sales-workflow-panel {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.sales-evidence-result {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.sales-evidence-result p {
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .panel-actions {
   display: flex;
   gap: 10px;
