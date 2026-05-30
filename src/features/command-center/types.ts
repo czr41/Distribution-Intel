@@ -42,6 +42,19 @@ export type SalesmanRow = {
   status: "Active" | "Inactive";
 };
 
+export type AppUserRole = "super_admin" | "operations_manager" | "admin_operator" | "field_executive" | "brand_partner_viewer" | "brand_partner_manager";
+
+export type AppUserRow = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: AppUserRole;
+  roleLabel: string;
+  territory: string;
+  status: "Active" | "Inactive";
+};
+
 export type TaskRow = {
   id: string;
   title: string;
@@ -161,6 +174,7 @@ export type OpenAIIntegrationSettings = {
 
 export type CommandCenterData = {
   records: CommandRecord[];
+  users: AppUserRow[];
   brands: BrandOption[];
   outlets: OutletRow[];
   salesmen: SalesmanRow[];

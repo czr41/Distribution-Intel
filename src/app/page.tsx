@@ -8,6 +8,7 @@ import {
   createPaymentAction,
   createOrderAction,
   createBillAction,
+  createUserAction,
   saveAIProviderAction,
   saveOpenAIIntegrationAction,
   saveMetaIntegrationAction,
@@ -21,7 +22,8 @@ import {
   updateTerritoryAction,
   updatePaymentAction,
   updateOrderAction,
-  updateBillAction
+  updateBillAction,
+  updateUserAction
 } from "@/features/command-center/actions";
 import { getCommandCenterData } from "@/features/command-center/data";
 
@@ -30,6 +32,7 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   const data = await getCommandCenterData().catch((error: unknown) => ({
     records: [],
+    users: [],
     brands: [],
     outlets: [],
     salesmen: [],
@@ -90,6 +93,7 @@ export default async function Home() {
         createPayment: createPaymentAction,
         createOrder: createOrderAction,
         createBill: createBillAction,
+        createUser: createUserAction,
         updateBrand: updateBrandAction,
         updateOutlet: updateOutletAction,
         updateSalesman: updateSalesmanAction,
@@ -98,6 +102,7 @@ export default async function Home() {
         updatePayment: updatePaymentAction,
         updateOrder: updateOrderAction,
         updateBill: updateBillAction,
+        updateUser: updateUserAction,
         saveMetaIntegration: saveMetaIntegrationAction,
         saveAIProvider: saveAIProviderAction,
         saveOpenAIIntegration: saveOpenAIIntegrationAction,

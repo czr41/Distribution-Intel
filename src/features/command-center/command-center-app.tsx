@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import type {
   AIProviderSettings,
+  AppUserRow,
   BillRow,
   BrandOption,
   CommandCenterData,
@@ -19,7 +20,7 @@ import type {
   VerificationDraftRecord
 } from "./types";
 
-type View = "command" | "inbox" | "verification" | "media" | "outlets" | "tasks" | "payments" | "orders" | "bills" | "territories" | "reports" | "partners" | "ops" | "integrations";
+type View = "command" | "inbox" | "verification" | "media" | "outlets" | "tasks" | "payments" | "orders" | "bills" | "territories" | "reports" | "partners" | "ops" | "users" | "integrations";
 type MediaLabResult = {
   fileName: string;
   fileType: string;
@@ -53,13 +54,14 @@ type MediaLabResult = {
   };
   warning?: string;
 };
-type ModalType = "outlet" | "brand" | "salesman" | "task" | "territory" | "payment" | "order" | "bill" | null;
+type ModalType = "outlet" | "brand" | "salesman" | "user" | "task" | "territory" | "payment" | "order" | "bill" | null;
 type BulkImportType = Exclude<ModalType, null>;
 type IntegrationNotice = { type: "success" | "error"; message: string };
 type EditableMasterData =
   | { type: "outlet"; record: OutletRow }
   | { type: "brand"; record: BrandOption }
   | { type: "salesman"; record: SalesmanRow }
+  | { type: "user"; record: AppUserRow }
   | { type: "task"; record: TaskRow }
   | { type: "territory"; record: TerritoryRow }
   | { type: "payment"; record: PaymentRow }
@@ -69,6 +71,7 @@ type CommandCenterActions = {
   createBrand: (formData: FormData) => Promise<BrandOption>;
   createOutlet: (formData: FormData) => Promise<OutletRow>;
   createSalesman: (formData: FormData) => Promise<SalesmanRow>;
+  createUser: (formData: FormData) => Promise<AppUserRow>;
   createTask: (formData: FormData) => Promise<TaskRow>;
   createTerritory: (formData: FormData) => Promise<TerritoryRow>;
   createPayment: (formData: FormData) => Promise<PaymentRow>;
@@ -77,6 +80,7 @@ type CommandCenterActions = {
   updateBrand: (formData: FormData) => Promise<BrandOption>;
   updateOutlet: (formData: FormData) => Promise<OutletRow>;
   updateSalesman: (formData: FormData) => Promise<SalesmanRow>;
+  updateUser: (formData: FormData) => Promise<AppUserRow>;
   updateTask: (formData: FormData) => Promise<TaskRow>;
   updateTerritory: (formData: FormData) => Promise<TerritoryRow>;
   updatePayment: (formData: FormData) => Promise<PaymentRow>;
@@ -111,6 +115,7 @@ const viewTitles: Record<View, string> = {
   reports: "Reports",
   partners: "Brand Partner Dashboard",
   ops: "Sales App & Team",
+  users: "User Management",
   integrations: "Integrations"
 };
 
@@ -132,6 +137,12 @@ const bulkTemplates: Record<BulkImportType, { title: string; filename: string; c
     filename: "shipd2r-sales-rep-import-template.csv",
     columns: ["name", "phone", "city", "territory", "status"],
     sample: ["Rahul Sharma", "9876543201", "Pune", "Pune West", "Active"]
+  },
+  user: {
+    title: "User Bulk Import",
+    filename: "shipd2r-user-import-template.csv",
+    columns: ["name", "email", "phone", "role", "territory", "status"],
+    sample: ["Ramesh Patil", "ramesh@shipd2r.local", "9876543201", "Sales Executive", "Pune West", "Active"]
   },
   task: {
     title: "Task Bulk Import",
@@ -216,10 +227,32 @@ function normalizeHeader(value: string) {
   return value.trim().toLowerCase();
 }
 
+function userAccessKind(user: AppUserRow) {
+  if (user.role === "field_executive") return "sales";
+  if (user.role === "operations_manager") return "manager";
+  if (user.role === "super_admin" || user.role === "admin_operator") return "admin";
+  return "partner";
+}
+
+function canSeeView(user: AppUserRow, view: View) {
+  const accessKind = userAccessKind(user);
+  if (accessKind === "admin") return true;
+  if (accessKind === "manager") return !["users", "integrations"].includes(view);
+  if (accessKind === "partner") return ["partners", "reports"].includes(view);
+  return ["ops", "outlets", "tasks", "orders", "payments", "media"].includes(view);
+}
+
+function loginCodeFor(user: AppUserRow) {
+  const digits = user.phone.replace(/\D/g, "");
+  return digits.slice(-4) || "0000";
+}
+
 export function CommandCenterApp({ initialData, actions }: { initialData: CommandCenterData; actions: CommandCenterActions }) {
+  const [currentUser, setCurrentUser] = useState<AppUserRow | null>(null);
   const [activeView, setActiveView] = useState<View>("command");
   const [selectedId, setSelectedId] = useState(initialData.records[0]?.id ?? "");
   const [records, setRecords] = useState<CommandRecord[]>(initialData.records);
+  const [users, setUsers] = useState<AppUserRow[]>(initialData.users);
   const [brands, setBrands] = useState<BrandOption[]>(initialData.brands);
   const [outlets, setOutlets] = useState<OutletRow[]>(initialData.outlets);
   const [salesmen, setSalesmen] = useState<SalesmanRow[]>(initialData.salesmen);
@@ -241,6 +274,75 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const [bulkImportMessage, setBulkImportMessage] = useState("");
   const [partnerFilter, setPartnerFilter] = useState("all");
   const [messageText, setMessageText] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const visibleViews = (Object.keys(viewTitles) as View[]).filter((view) => currentUser ? canSeeView(currentUser, view) : false);
+  const visiblePartnerRecords = useMemo(
+    () => records.filter((record) => record.status === "verified" && (partnerFilter === "all" || record.partner === partnerFilter)),
+    [partnerFilter, records]
+  );
+
+  function login(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const role = String(form.get("role") ?? "");
+    const identifier = String(form.get("identifier") ?? "").trim().toLowerCase();
+    const accessCode = String(form.get("accessCode") ?? "").trim();
+    const roleMatches: Record<string, AppUserRow["role"][]> = {
+      Admin: ["super_admin", "admin_operator"],
+      Manager: ["operations_manager"],
+      "Sales Executive": ["field_executive"],
+      "Brand Partner": ["brand_partner_viewer", "brand_partner_manager"]
+    };
+
+    const hasAdminUser = users.some((user) => user.role === "super_admin" || user.role === "admin_operator");
+
+    if (!hasAdminUser && role === "Admin" && accessCode === "0000") {
+      setLoginError("");
+      setCurrentUser({
+        id: "bootstrap-admin",
+        name: "Bootstrap Admin",
+        email: identifier || "admin@shipd2r.local",
+        phone: "0000",
+        role: "super_admin",
+        roleLabel: "Admin",
+        territory: "All territories",
+        status: "Active"
+      });
+      setActiveView("users");
+      return;
+    }
+
+    const matched = users.find((user) => {
+      const identifiers = [user.email, user.phone, user.name].map((value) => value.toLowerCase());
+      return roleMatches[role]?.includes(user.role) && identifiers.some((value) => value === identifier) && loginCodeFor(user) === accessCode;
+    });
+
+    if (matched) {
+      setLoginError("");
+      setCurrentUser(matched);
+      const firstView = userAccessKind(matched) === "sales" ? "ops" : "command";
+      setActiveView(canSeeView(matched, firstView) ? firstView : "partners");
+    } else {
+      setLoginError("Login failed. Check role, identifier, and access code.");
+    }
+  }
+
+  if (!currentUser) {
+    return <LoginScreen users={users} error={loginError} onLogin={login} />;
+  }
+
+  if (userAccessKind(currentUser) === "sales") {
+    return (
+      <SalesRepPortal
+        user={currentUser}
+        tasks={tasks}
+        outlets={outlets}
+        orders={orders}
+        payments={payments}
+        onLogout={() => setCurrentUser(null)}
+      />
+    );
+  }
 
   const selectedRecord =
     records.find((record) => record.id === selectedId) ??
@@ -265,10 +367,6 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const highConfidenceCount = records.filter((record) => record.confidence >= 0.85).length;
   const recordCount = Math.max(records.length, 1);
 
-  const visiblePartnerRecords = useMemo(
-    () => records.filter((record) => record.status === "verified" && (partnerFilter === "all" || record.partner === partnerFilter)),
-    [partnerFilter, records]
-  );
   const selectedDraft = verificationDrafts.find((draft) => draft.id === selectedDraftId) ?? verificationDrafts[0];
 
   function openCreate(type: Exclude<ModalType, null>) {
@@ -384,6 +482,12 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       const saved = isEditing ? await actions.updateSalesman(form) : await actions.createSalesman(form);
       setSalesmen((current) => (isEditing ? current.map((person) => (person.id === saved.id ? saved : person)) : [saved, ...current]));
       setActiveView("ops");
+    }
+
+    if (modalType === "user") {
+      const saved = isEditing ? await actions.updateUser(form) : await actions.createUser(form);
+      setUsers((current) => (isEditing ? current.map((user) => (user.id === saved.id ? saved : user)) : [saved, ...current]));
+      setActiveView("users");
     }
 
     if (modalType === "task") {
@@ -552,6 +656,17 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       }
       setSalesmen((current) => [...savedRows, ...current]);
       setActiveView("ops");
+    }
+
+    if (type === "user") {
+      const savedRows: AppUserRow[] = [];
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.user.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Active" : row[column] ?? ""));
+        savedRows.push(await actions.createUser(form));
+      }
+      setUsers((current) => [...savedRows, ...current]);
+      setActiveView("users");
     }
 
     if (type === "task") {
@@ -726,6 +841,10 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Add Sales Rep", action: () => openCreate("salesman") },
       { label: "Bulk Import", action: () => openBulkImport("salesman") }
     ],
+    users: [
+      { label: "Add User", action: () => openCreate("user") },
+      { label: "Bulk Import", action: () => openBulkImport("user") }
+    ],
     integrations: [{ label: "Copy Webhook Path", action: () => navigator.clipboard?.writeText(metaIntegration.webhookUrl) }]
   };
 
@@ -737,9 +856,9 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           <span>Distribution ERP / CRM</span>
         </div>
         <nav className="nav-tabs" aria-label="Views">
-          {(Object.keys(viewTitles) as View[]).map((view) => (
+          {visibleViews.map((view) => (
             <button key={view} className={`nav-tab ${activeView === view ? "active" : ""}`} onClick={() => setActiveView(view)}>
-              <span>{view === "ops" ? "Sales App" : view === "inbox" ? "Retailer WhatsApp" : view[0].toUpperCase() + view.slice(1)}</span>
+              <span>{view === "ops" ? "Sales App" : view === "inbox" ? "Retailer WhatsApp" : view === "users" ? "Users" : view[0].toUpperCase() + view.slice(1)}</span>
             </button>
           ))}
         </nav>
@@ -757,6 +876,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           <div>
             <p className="eyebrow">Shipd2r central ERP / CRM</p>
             <h1>{viewTitles[activeView]}</h1>
+            <p className="session-line">{currentUser.name} - {currentUser.roleLabel}</p>
           </div>
           <div className="topbar-actions">
             {headerActions[activeView].map((headerAction) => (
@@ -764,6 +884,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
                 {headerAction.label}
               </button>
             ))}
+            <button className="secondary-button" onClick={() => setCurrentUser(null)}>Logout</button>
           </div>
         </header>
 
@@ -820,6 +941,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           <PartnersView brands={brands} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onBulkImport={() => openBulkImport("brand")} />
         )}
         {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => openCreate("salesman")} onEdit={(person) => openEdit({ type: "salesman", record: person })} onBulkImport={() => openBulkImport("salesman")} />}
+        {activeView === "users" && <UsersView users={users} onAdd={() => openCreate("user")} onEdit={(user) => openEdit({ type: "user", record: user })} onBulkImport={() => openBulkImport("user")} />}
         {activeView === "tasks" && <TasksView tasks={tasks} onAdd={() => openCreate("task")} onEdit={(task) => openEdit({ type: "task", record: task })} onBulkImport={() => openBulkImport("task")} />}
         {activeView === "territories" && <TerritoriesView territories={territories} onAdd={() => openCreate("territory")} onEdit={(territory) => openEdit({ type: "territory", record: territory })} onBulkImport={() => openBulkImport("territory")} />}
         {activeView === "payments" && <PaymentsView payments={payments} onAdd={() => openCreate("payment")} onEdit={(payment) => openEdit({ type: "payment", record: payment })} onBulkImport={() => openBulkImport("payment")} />}
@@ -875,6 +997,109 @@ function Metric({ label, value, detail }: { label: string; value: string | numbe
       <strong>{value}</strong>
       <small>{detail}</small>
     </article>
+  );
+}
+
+function LoginScreen({ users, error, onLogin }: { users: AppUserRow[]; error: string; onLogin: (event: FormEvent<HTMLFormElement>) => void }) {
+  const demoAdmin = users.find((user) => user.role === "super_admin" || user.role === "admin_operator");
+  const demoManager = users.find((user) => user.role === "operations_manager");
+  const demoSales = users.find((user) => user.role === "field_executive");
+  const hasAdminUser = Boolean(demoAdmin);
+
+  return (
+    <main className="login-shell">
+      <section className="login-card">
+        <img src="/brand/shipd2r-logo.png" alt="shipd2r" />
+        <p className="eyebrow">ERP / CRM access</p>
+        <h1>Choose your workspace</h1>
+        <p>Admins manage everything. Managers supervise teams and territories. Sales executives enter the sales app.</p>
+        <form className="master-form" onSubmit={onLogin}>
+          <Select name="role" label="Login as" options={["Admin", "Manager", "Sales Executive", "Brand Partner"]} defaultValue="Admin" />
+          <Input name="identifier" label="Email, phone, or name" placeholder="admin@shipd2r.local" />
+          <Input name="accessCode" label="Access code" placeholder="Last 4 digits of phone" type="password" />
+          {error && <p className="form-error">{error}</p>}
+          <button className="approve" type="submit">Login</button>
+        </form>
+        <div className="login-hints">
+          <strong>MVP access rule</strong>
+          <span>Use the user email/phone/name and the last 4 digits of that user's phone as the access code.</span>
+          {demoAdmin && <span>Admin example: {demoAdmin.email || demoAdmin.phone} / {loginCodeFor(demoAdmin)}</span>}
+          {demoManager && <span>Manager example: {demoManager.email || demoManager.phone} / {loginCodeFor(demoManager)}</span>}
+          {demoSales && <span>Sales example: {demoSales.email || demoSales.phone} / {loginCodeFor(demoSales)}</span>}
+          {!hasAdminUser && <span>Bootstrap admin: any email / 0000</span>}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function SalesRepPortal({
+  user,
+  tasks,
+  outlets,
+  orders,
+  payments,
+  onLogout
+}: {
+  user: AppUserRow;
+  tasks: TaskRow[];
+  outlets: OutletRow[];
+  orders: OrderRow[];
+  payments: PaymentRow[];
+  onLogout: () => void;
+}) {
+  return (
+    <main className="sales-app-shell">
+      <header className="sales-app-topbar">
+        <div>
+          <p className="eyebrow">Shipd2r sales app</p>
+          <h1>Welcome, {user.name}</h1>
+          <span>{user.territory || "Assigned territory"} - {user.phone}</span>
+        </div>
+        <button className="secondary-button" onClick={onLogout}>Logout</button>
+      </header>
+      <section className="metrics-grid">
+        <Metric label="Assigned tasks" value={tasks.length} detail="Follow-ups and escalations" />
+        <Metric label="Outlets" value={outlets.length} detail="Visible retailer universe" />
+        <Metric label="Open orders" value={orders.filter((order) => !["Delivered", "Cancelled"].includes(order.status)).length} detail="To confirm or follow up" />
+        <Metric label="Payment risk" value={payments.filter((payment) => ["High", "Critical"].includes(payment.riskLevel)).length} detail="High-priority collections" />
+      </section>
+      <section className="ops-grid">
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Today's Sales Workflow</h2>
+              <p>Fast actions for visit logging, order capture, payment follow-up, and evidence upload.</p>
+            </div>
+          </div>
+          <div className="sales-action-grid">
+            <button className="primary-button">Start Visit</button>
+            <button className="primary-button">Create Order</button>
+            <button className="primary-button">Collect Payment</button>
+            <button className="primary-button">Upload Evidence</button>
+          </div>
+        </article>
+        <article className="panel">
+          <h2>My Tasks</h2>
+          <div className="task-list">
+            {tasks.slice(0, 5).map((task) => (
+              <article className="task-row" key={task.id}>
+                <div className="queue-top">
+                  <strong>{task.title}</strong>
+                  <span className={`tag ${task.priority === "High" || task.priority === "Critical" ? "warn" : "blue"}`}>{task.priority}</span>
+                </div>
+                <p>{task.description}</p>
+                <div className="record-meta">
+                  <span>{task.outlet}</span>
+                  <span>{task.dueDate}</span>
+                  <span className="tag">{task.status}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </article>
+      </section>
+    </main>
   );
 }
 
@@ -1388,6 +1613,29 @@ function OpsView({ salesmen, onAdd, onEdit, onBulkImport }: { salesmen: Salesman
   );
 }
 
+function UsersView({ users, onAdd, onEdit, onBulkImport }: { users: AppUserRow[]; onAdd: () => void; onEdit: (user: AppUserRow) => void; onBulkImport: () => void }) {
+  return (
+    <CrudPanel title="Users & Login Access" description="Admins create and manage admin, manager, sales executive, and brand partner logins." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add User">
+      {users.map((user) => (
+        <article className="task-row" key={user.id}>
+          <div className="queue-top">
+            <strong>{user.name}</strong>
+            <div className="inline-actions">
+              <span className="tag blue">{user.roleLabel}</span>
+              <button className="link-button" onClick={() => onEdit(user)}>Edit</button>
+            </div>
+          </div>
+          <p>{user.email || "No email"} - {user.phone || "No phone"}</p>
+          <div className="record-meta">
+            <span>{user.territory}</span>
+            <span className="tag">{user.status}</span>
+          </div>
+        </article>
+      ))}
+    </CrudPanel>
+  );
+}
+
 function TasksView({ tasks, onAdd, onEdit, onBulkImport }: { tasks: TaskRow[]; onAdd: () => void; onEdit: (task: TaskRow) => void; onBulkImport: () => void }) {
   return (
     <section className="ops-grid">
@@ -1776,7 +2024,7 @@ function MasterDataModal({
   type: Exclude<ModalType, null>;
   brands: BrandOption[];
   outlets: OutletRow[];
-  initialValues?: OutletRow | BrandOption | SalesmanRow | TaskRow | TerritoryRow | PaymentRow | OrderRow | BillRow;
+  initialValues?: OutletRow | BrandOption | SalesmanRow | AppUserRow | TaskRow | TerritoryRow | PaymentRow | OrderRow | BillRow;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -1786,6 +2034,8 @@ function MasterDataModal({
       ? "Brand Client"
       : type === "salesman"
         ? "Sales Rep"
+        : type === "user"
+          ? "User"
         : type === "territory"
           ? "Territory"
           : type === "payment"
@@ -1803,6 +2053,7 @@ function MasterDataModal({
   const outletValues = type === "outlet" ? (initialValues as OutletRow | undefined) : undefined;
   const brandValues = type === "brand" ? (initialValues as BrandOption | undefined) : undefined;
   const salesmanValues = type === "salesman" ? (initialValues as SalesmanRow | undefined) : undefined;
+  const userValues = type === "user" ? (initialValues as AppUserRow | undefined) : undefined;
   const taskValues = type === "task" ? (initialValues as TaskRow | undefined) : undefined;
   const territoryValues = type === "territory" ? (initialValues as TerritoryRow | undefined) : undefined;
   const paymentValues = type === "payment" ? (initialValues as PaymentRow | undefined) : undefined;
@@ -1848,6 +2099,16 @@ function MasterDataModal({
                 <Input name="city" label="City" defaultValue={salesmanValues?.city} />
                 <Input name="territory" label="Territory" defaultValue={salesmanValues?.territory} />
                 <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={salesmanValues?.status} />
+              </>
+            )}
+            {type === "user" && (
+              <>
+                <Input name="name" label="Full name" defaultValue={userValues?.name} />
+                <Input name="email" label="Login email" type="email" required={false} defaultValue={userValues?.email} />
+                <Input name="phone" label="Phone / login code source" defaultValue={userValues?.phone} />
+                <Select name="role" label="Login role" options={["Admin", "Manager", "Admin Operator", "Sales Executive", "Brand Viewer", "Brand Manager"]} defaultValue={userValues?.roleLabel} />
+                <Input name="territory" label="Territory / team" required={false} defaultValue={userValues?.territory === "Managed in Sales App & Team" ? "" : userValues?.territory} />
+                <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={userValues?.status} />
               </>
             )}
             {type === "task" && (

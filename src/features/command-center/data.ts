@@ -1,6 +1,7 @@
 import { createSupabaseReadClient } from "@/lib/supabase/admin";
 import type {
   AIProviderSettings,
+  AppUserRow,
   BillRow,
   BrandOption,
   CommandCenterData,
@@ -37,6 +38,15 @@ type SalesmanResult = {
   status: string | null;
   users?: { name?: string | null } | { name?: string | null }[] | null;
   territories?: { name?: string | null; city?: string | null } | { name?: string | null; city?: string | null }[] | null;
+};
+
+type AppUserResult = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: AppUserRow["role"];
+  status: string | null;
 };
 
 type TaskResult = {
@@ -214,6 +224,22 @@ function displayOpenAIStatus(status?: string | null): "Connected" | "Draft" | "D
   return displayConnectionStatus(status);
 }
 
+function displayUserStatus(status?: string | null): AppUserRow["status"] {
+  return status === "inactive" ? "Inactive" : "Active";
+}
+
+function roleLabel(role: AppUserRow["role"]) {
+  const labels: Record<AppUserRow["role"], string> = {
+    super_admin: "Admin",
+    operations_manager: "Manager",
+    admin_operator: "Admin Operator",
+    field_executive: "Sales Executive",
+    brand_partner_viewer: "Brand Viewer",
+    brand_partner_manager: "Brand Manager"
+  };
+  return labels[role] ?? role;
+}
+
 function defaultMetaIntegration(): MetaIntegrationSettings {
   return {
     displayName: "Meta WhatsApp Cloud API",
@@ -272,6 +298,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
 
   const [
     brandsResult,
+    usersResult,
     outletsResult,
     salesmenResult,
     tasksResult,
@@ -284,6 +311,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     aiProviderResult
   ] = await Promise.all([
     supabase.from("brands").select("id,name,category,contact_person,status").order("created_at", { ascending: false }),
+    supabase.from("users").select("id,name,email,phone,role,status").order("created_at", { ascending: false }),
     supabase
       .from("outlets")
       .select("id,name,owner_name,phone,city,channel_type,status,outlet_brands(brands(name))")
@@ -329,6 +357,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   ]);
 
   if (brandsResult.error) throw new Error(brandsResult.error.message);
+  if (usersResult.error) throw new Error(usersResult.error.message);
   if (outletsResult.error) throw new Error(outletsResult.error.message);
   if (salesmenResult.error) throw new Error(salesmenResult.error.message);
   if (tasksResult.error) throw new Error(tasksResult.error.message);
@@ -346,6 +375,17 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     category: brand.category ?? "Uncategorized",
     contact: brand.contact_person ?? "Internal ops",
     status: displayBrandStatus(brand.status)
+  }));
+
+  const users: AppUserRow[] = ((usersResult.data ?? []) as AppUserResult[]).map((user) => ({
+    id: user.id,
+    name: user.name,
+    email: user.email ?? "",
+    phone: user.phone ?? "",
+    role: user.role,
+    roleLabel: roleLabel(user.role),
+    territory: "Managed in Sales App & Team",
+    status: displayUserStatus(user.status)
   }));
 
   const outlets: OutletRow[] = ((outletsResult.data ?? []) as OutletResult[]).map((outlet) => {
@@ -558,5 +598,5 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     updatedAt: typeof openAIConfig.updatedAt === "string" && openAIConfig.updatedAt ? openAIConfig.updatedAt : openAIDefaults.updatedAt
   };
 
-  return { records, brands, outlets, salesmen, tasks, territories, payments, orders, bills, verificationDrafts, metaIntegration, aiProvider, openAIIntegration };
+  return { records, users, brands, outlets, salesmen, tasks, territories, payments, orders, bills, verificationDrafts, metaIntegration, aiProvider, openAIIntegration };
 }

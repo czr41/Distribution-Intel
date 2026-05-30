@@ -13,6 +13,9 @@ The current implementation is a deployed Next.js command-center MVP backed by Su
 - AI extraction provider settings for Sarvam AI, OpenAI, and Gemini
 - Human-in-the-loop verification queue
 - Internal command center metrics
+- MVP role login for admins, managers, sales executives, and brand partners
+- Admin user management from the `Users` workspace
+- Separate sales-executive app shell after sales login
 - Partner dashboard that only shows verified records
 - Supabase-backed CRUD for outlets, salesmen, clients/brands, territories, tasks, payments, orders, and bills
 - Next.js App Router scaffold under `src/app`
@@ -31,6 +34,17 @@ The current app supports adding:
 - Client / brand from `Partners`
 
 These records are written to Supabase through server actions.
+
+## MVP Login Model
+
+The current login is an MVP access layer, not final Supabase Auth yet.
+
+- Admins can access the full ERP / CRM, including `Users`.
+- Managers can access operating screens but not integration or user administration.
+- Sales executives get a separate sales app workspace.
+- Brand partners are limited to partner dashboards and reports.
+
+For now, users log in with role + email/phone/name + the last 4 digits of their phone. If no admin user exists yet, use role `Admin` with any identifier and access code `0000`, then create a real admin from `Users`.
 
 ## Running the Next.js App
 

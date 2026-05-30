@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { BillRow, BrandOption, OrderRow, OutletRow, PaymentRow, SalesmanRow, TaskRow, TerritoryRow, VerificationDraftRecord } from "./types";
+import type { AppUserRow, BillRow, BrandOption, OrderRow, OutletRow, PaymentRow, SalesmanRow, TaskRow, TerritoryRow, VerificationDraftRecord } from "./types";
 
 const statusMap = {
   Active: "active",
@@ -33,6 +33,24 @@ const salesmanSchema = z.object({
   phone: z.string().min(1),
   city: z.string().min(1),
   territory: z.string().min(1),
+  status: z.enum(["Active", "Inactive"])
+});
+
+const userRoleMap = {
+  Admin: "super_admin",
+  Manager: "operations_manager",
+  "Admin Operator": "admin_operator",
+  "Sales Executive": "field_executive",
+  "Brand Viewer": "brand_partner_viewer",
+  "Brand Manager": "brand_partner_manager"
+} as const;
+
+const userSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email().optional().or(z.literal("")),
+  phone: z.string().min(1),
+  role: z.enum(["Admin", "Manager", "Admin Operator", "Sales Executive", "Brand Viewer", "Brand Manager"]),
+  territory: z.string().optional(),
   status: z.enum(["Active", "Inactive"])
 });
 
@@ -235,6 +253,35 @@ function orderStatus(status?: string | null): OrderRow["status"] {
   if (status === "cancelled") return "Cancelled";
   if (status === "on_hold") return "On hold";
   return "Intent captured";
+}
+
+function userStatus(status?: string | null): AppUserRow["status"] {
+  return status === "inactive" ? "Inactive" : "Active";
+}
+
+function roleLabel(role: AppUserRow["role"]) {
+  const labels: Record<AppUserRow["role"], string> = {
+    super_admin: "Admin",
+    operations_manager: "Manager",
+    admin_operator: "Admin Operator",
+    field_executive: "Sales Executive",
+    brand_partner_viewer: "Brand Viewer",
+    brand_partner_manager: "Brand Manager"
+  };
+  return labels[role] ?? role;
+}
+
+function appUserFromData(data: { id: string; name: string; email: string | null; phone: string | null; role: AppUserRow["role"]; status: string | null }, territory = "Managed in Sales App & Team"): AppUserRow {
+  return {
+    id: data.id,
+    name: data.name,
+    email: data.email ?? "",
+    phone: data.phone ?? "",
+    role: data.role,
+    roleLabel: roleLabel(data.role),
+    territory,
+    status: userStatus(data.status)
+  };
 }
 
 function numberInput(value: string) {
@@ -514,6 +561,109 @@ export async function updateOutletAction(formData: FormData): Promise<OutletRow>
     brand: input.brand || "Unassigned",
     status: outletStatus(outlet.status)
   };
+}
+
+export async function createUserAction(formData: FormData): Promise<AppUserRow> {
+  const input = userSchema.parse({
+    name: formValue(formData, "name"),
+    email: formValue(formData, "email"),
+    phone: formValue(formData, "phone"),
+    role: formValue(formData, "role"),
+    territory: formValue(formData, "territory"),
+    status: formValue(formData, "status")
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const role = userRoleMap[input.role];
+  const email = input.email || `${input.phone.replace(/[^0-9]+/g, "") || Date.now()}@shipd2r.local`;
+
+  const { data: user, error: userError } = await supabase
+    .from("users")
+    .insert({
+      name: input.name,
+      email,
+      phone: input.phone,
+      role,
+      status: statusMap[input.status]
+    })
+    .select("id,name,email,phone,role,status")
+    .single();
+
+  if (userError) throw new Error(userError.message);
+
+  if (role === "field_executive") {
+    const territoryId = await findOrCreateTerritory(supabase, input.territory || "Unassigned", "Unassigned");
+    const { error: executiveError } = await supabase.from("field_executives").insert({
+      user_id: user.id,
+      phone: input.phone,
+      whatsapp_number: input.phone,
+      territory_id: territoryId,
+      status: statusMap[input.status]
+    });
+    if (executiveError) throw new Error(executiveError.message);
+  }
+
+  revalidatePath("/");
+  return appUserFromData(user as { id: string; name: string; email: string | null; phone: string | null; role: AppUserRow["role"]; status: string | null }, input.territory || "Managed in Sales App & Team");
+}
+
+export async function updateUserAction(formData: FormData): Promise<AppUserRow> {
+  const id = formId(formData);
+  const input = userSchema.parse({
+    name: formValue(formData, "name"),
+    email: formValue(formData, "email"),
+    phone: formValue(formData, "phone"),
+    role: formValue(formData, "role"),
+    territory: formValue(formData, "territory"),
+    status: formValue(formData, "status")
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const role = userRoleMap[input.role];
+  const email = input.email || `${input.phone.replace(/[^0-9]+/g, "") || Date.now()}@shipd2r.local`;
+  const now = new Date().toISOString();
+
+  const { data: user, error: userError } = await supabase
+    .from("users")
+    .update({
+      name: input.name,
+      email,
+      phone: input.phone,
+      role,
+      status: statusMap[input.status],
+      updated_at: now
+    })
+    .eq("id", id)
+    .select("id,name,email,phone,role,status")
+    .single();
+
+  if (userError) throw new Error(userError.message);
+
+  if (role === "field_executive") {
+    const territoryId = await findOrCreateTerritory(supabase, input.territory || "Unassigned", "Unassigned");
+    const { data: existingExecutive, error: existingError } = await supabase
+      .from("field_executives")
+      .select("id")
+      .eq("user_id", id)
+      .maybeSingle();
+    if (existingError) throw new Error(existingError.message);
+
+    const payload = {
+      user_id: id,
+      phone: input.phone,
+      whatsapp_number: input.phone,
+      territory_id: territoryId,
+      status: statusMap[input.status],
+      updated_at: now
+    };
+    const { error: executiveError } = existingExecutive?.id
+      ? await supabase.from("field_executives").update(payload).eq("id", existingExecutive.id)
+      : await supabase.from("field_executives").insert(payload);
+    if (executiveError) throw new Error(executiveError.message);
+  }
+
+  revalidatePath("/");
+  return appUserFromData(user as { id: string; name: string; email: string | null; phone: string | null; role: AppUserRow["role"]; status: string | null }, input.territory || "Managed in Sales App & Team");
 }
 
 export async function createSalesmanAction(formData: FormData): Promise<SalesmanRow> {
