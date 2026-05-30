@@ -237,7 +237,7 @@ function userAccessKind(user: AppUserRow) {
 function canSeeView(user: AppUserRow, view: View) {
   const accessKind = userAccessKind(user);
   if (accessKind === "admin") return true;
-  if (accessKind === "manager") return !["users", "integrations"].includes(view);
+  if (accessKind === "manager") return !["users", "integrations", "verification"].includes(view);
   if (accessKind === "partner") return ["partners", "reports"].includes(view);
   return ["ops", "outlets", "tasks", "orders", "payments", "media"].includes(view);
 }
@@ -344,6 +344,8 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     );
   }
 
+  const accessKind = userAccessKind(currentUser);
+  const isAdminUser = accessKind === "admin";
   const selectedRecord =
     records.find((record) => record.id === selectedId) ??
     records[0] ?? {
@@ -790,24 +792,35 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   }
 
   const pendingRecord = records.find((record) => record.status === "pending");
+  const commandActions = isAdminUser
+    ? [
+        { label: "Add Outlet", action: () => openCreate("outlet") },
+        { label: "Bulk Import", action: () => openBulkImport("outlet") },
+        { label: "Verify Next", action: () => pendingRecord && verifyRecord(pendingRecord.id), disabled: !pendingRecord }
+      ]
+    : [
+        { label: "Add Order", action: () => openCreate("order") },
+        { label: "Create Task", action: () => openCreate("task") },
+        { label: "Add Payment", action: () => openCreate("payment") }
+      ];
   const headerActions: Record<View, { label: string; action: () => void; disabled?: boolean }[]> = {
-    command: [
-      { label: "Add Outlet", action: () => openCreate("outlet") },
-      { label: "Bulk Import", action: () => openBulkImport("outlet") },
-      { label: "Verify Next", action: () => pendingRecord && verifyRecord(pendingRecord.id), disabled: !pendingRecord }
-    ],
-    inbox: [
-      { label: "Log Retailer WhatsApp", action: () => setActiveView("inbox") },
-      { label: "Verify Next", action: () => pendingRecord && verifyRecord(pendingRecord.id), disabled: !pendingRecord }
-    ],
+    command: commandActions,
+    inbox: isAdminUser
+      ? [
+          { label: "Log Retailer WhatsApp", action: () => setActiveView("inbox") },
+          { label: "Verify Next", action: () => pendingRecord && verifyRecord(pendingRecord.id), disabled: !pendingRecord }
+        ]
+      : [{ label: "Log Retailer WhatsApp", action: () => setActiveView("inbox") }],
     verification: [
       { label: "Approve Current", action: () => verifyRecord(selectedRecord.id), disabled: selectedRecord.id === "empty" },
       { label: "Ask Clarification", action: () => sendBack(selectedRecord.id), disabled: selectedRecord.id === "empty" }
     ],
-    media: [
-      { label: "Configure AI", action: () => setActiveView("integrations") },
-      { label: "Open Inbox", action: () => setActiveView("inbox") }
-    ],
+    media: isAdminUser
+      ? [
+          { label: "Configure AI", action: () => setActiveView("integrations") },
+          { label: "Open Inbox", action: () => setActiveView("inbox") }
+        ]
+      : [{ label: "Open Inbox", action: () => setActiveView("inbox") }],
     outlets: [
       { label: "Add Outlet", action: () => openCreate("outlet") },
       { label: "Bulk Import", action: () => openBulkImport("outlet") }
@@ -889,6 +902,19 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         </header>
 
         {activeView === "command" && (
+          accessKind === "manager" ? (
+            <ManagerDashboard
+              brands={brands}
+              outlets={outlets}
+              salesmen={salesmen}
+              tasks={tasks}
+              payments={payments}
+              orders={orders}
+              bills={bills}
+              records={records}
+              pendingAdminReview={pendingDraftCount || pendingCount}
+            />
+          ) : (
           <>
             <section className="metrics-grid">
               <Metric label="Pending verification" value={pendingDraftCount || pendingCount} detail="Human-in-the-loop queue" />
@@ -901,6 +927,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
               <RecordDetail record={selectedRecord} onVerify={verifyRecord} onSendBack={sendBack} />
             </section>
           </>
+          )
         )}
 
         {activeView === "inbox" && (
@@ -997,6 +1024,170 @@ function Metric({ label, value, detail }: { label: string; value: string | numbe
       <strong>{value}</strong>
       <small>{detail}</small>
     </article>
+  );
+}
+
+function ManagerDashboard({
+  brands,
+  outlets,
+  salesmen,
+  tasks,
+  payments,
+  orders,
+  bills,
+  records,
+  pendingAdminReview
+}: {
+  brands: BrandOption[];
+  outlets: OutletRow[];
+  salesmen: SalesmanRow[];
+  tasks: TaskRow[];
+  payments: PaymentRow[];
+  orders: OrderRow[];
+  bills: BillRow[];
+  records: CommandRecord[];
+  pendingAdminReview: number;
+}) {
+  const activeOutlets = outlets.filter((outlet) => outlet.status === "Active").length;
+  const prospectOutlets = outlets.filter((outlet) => outlet.status === "Prospect").length;
+  const openOrders = orders.filter((order) => !["Delivered", "Cancelled"].includes(order.status));
+  const openOrderValue = openOrders.reduce((total, order) => total + order.expectedValue, 0);
+  const billedValue = bills.reduce((total, bill) => total + bill.totalAmount, 0);
+  const collectedValue = payments.reduce((total, payment) => total + payment.amountCollected, 0);
+  const outstandingValue = payments.reduce((total, payment) => total + Math.max(payment.amountDue - payment.amountCollected, 0), 0);
+  const highRiskPayments = payments.filter((payment) => ["High", "Critical"].includes(payment.riskLevel) || ["Overdue", "Disputed"].includes(payment.status));
+  const openTasks = tasks.filter((task) => !["Completed", "Cancelled"].includes(task.status));
+  const urgentTasks = openTasks.filter((task) => ["High", "Critical"].includes(task.priority) || task.status === "Overdue");
+  const productiveRecords = records.filter((record) => record.type === "Sale" || record.value > 0);
+  const productiveRatio = records.length ? Math.round((productiveRecords.length / records.length) * 100) : 0;
+  const brandMovement = brands.map((brand) => {
+    const brandBills = bills.filter((bill) => bill.brand === brand.name).reduce((total, bill) => total + bill.totalAmount, 0);
+    const brandOrders = orders.filter((order) => order.brand === brand.name).reduce((total, order) => total + order.expectedValue, 0);
+    const outletCount = outlets.filter((outlet) => outlet.brand === brand.name).length;
+    return { name: brand.name, value: brandBills + brandOrders, outletCount };
+  });
+  const cityCoverage = outlets.reduce<Record<string, number>>((cities, outlet) => {
+    cities[outlet.city] = (cities[outlet.city] ?? 0) + 1;
+    return cities;
+  }, {});
+
+  return (
+    <section className="manager-dashboard">
+      <section className="metrics-grid">
+        <Metric label="Billed value" value={money(billedValue)} detail={`${bills.length} bills captured`} />
+        <Metric label="Outstanding" value={money(outstandingValue)} detail={`${money(collectedValue)} collected`} />
+        <Metric label="Open order pipeline" value={money(openOrderValue)} detail={`${openOrders.length} active order intents`} />
+        <Metric label="Outlet universe" value={activeOutlets} detail={`${prospectOutlets} prospects in CRM`} />
+      </section>
+
+      <section className="manager-grid">
+        <article className="panel manager-focus">
+          <div className="panel-heading">
+            <div>
+              <h2>Distribution Health</h2>
+              <p>Manager view of coverage, productivity, pipeline, and collections.</p>
+            </div>
+            <span className="tag blue">{productiveRatio}% productive</span>
+          </div>
+          <div className="manager-stat-grid">
+            <Field label="Active sales reps" value={String(salesmen.filter((person) => person.status === "Active").length)} />
+            <Field label="Open tasks" value={String(openTasks.length)} />
+            <Field label="Urgent follow-ups" value={String(urgentTasks.length)} />
+            <Field label="Admin review queue" value={String(pendingAdminReview)} />
+          </div>
+          <p className="manager-note">Verification is reserved for admin users. Managers can track pending review volume without approving or rejecting records.</p>
+        </article>
+
+        <article className="panel">
+          <h2>Payment Risk</h2>
+          <div className="task-list">
+            {highRiskPayments.slice(0, 5).map((payment) => (
+              <article className="task-row" key={payment.id}>
+                <div className="queue-top">
+                  <strong>{payment.outlet}</strong>
+                  <span className="tag warn">{payment.riskLevel}</span>
+                </div>
+                <p>{payment.brand} - {money(Math.max(payment.amountDue - payment.amountCollected, 0))} outstanding</p>
+                <div className="record-meta">
+                  <span>{payment.status}</span>
+                  <span>Due {payment.dueDate || "not set"}</span>
+                </div>
+              </article>
+            ))}
+            {!highRiskPayments.length && <p className="empty-state">No high-risk payments right now.</p>}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Order Pipeline</h2>
+          <div className="task-list">
+            {openOrders.slice(0, 5).map((order) => (
+              <article className="task-row" key={order.id}>
+                <div className="queue-top">
+                  <strong>{order.outlet}</strong>
+                  <span className="tag blue">{order.status}</span>
+                </div>
+                <p>{order.brand} - {money(order.expectedValue)}</p>
+                <div className="record-meta">
+                  <span>Expected {order.expectedDeliveryDate || "not set"}</span>
+                </div>
+              </article>
+            ))}
+            {!openOrders.length && <p className="empty-state">No active order pipeline yet.</p>}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Client Movement</h2>
+          <div className="task-list">
+            {brandMovement.slice(0, 5).map((brand) => (
+              <article className="task-row" key={brand.name}>
+                <div className="queue-top">
+                  <strong>{brand.name}</strong>
+                  <span className="tag">{brand.outletCount} outlets</span>
+                </div>
+                <p>{money(brand.value)} in bills and open orders</p>
+              </article>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Territory Coverage</h2>
+          <div className="task-list">
+            {Object.entries(cityCoverage).slice(0, 6).map(([city, count]) => (
+              <article className="task-row compact-row" key={city}>
+                <div className="queue-top">
+                  <strong>{city}</strong>
+                  <span className="tag blue">{count} outlets</span>
+                </div>
+              </article>
+            ))}
+            {!Object.keys(cityCoverage).length && <p className="empty-state">No outlets added yet.</p>}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Team Follow-Ups</h2>
+          <div className="task-list">
+            {urgentTasks.slice(0, 5).map((task) => (
+              <article className="task-row" key={task.id}>
+                <div className="queue-top">
+                  <strong>{task.title}</strong>
+                  <span className="tag warn">{task.priority}</span>
+                </div>
+                <p>{task.outlet} - {task.description}</p>
+                <div className="record-meta">
+                  <span>{task.status}</span>
+                  <span>Due {task.dueDate || "not set"}</span>
+                </div>
+              </article>
+            ))}
+            {!urgentTasks.length && <p className="empty-state">No urgent follow-ups right now.</p>}
+          </div>
+        </article>
+      </section>
+    </section>
   );
 }
 

@@ -426,6 +426,37 @@ h2 {
   grid-template-columns: minmax(340px, 0.9fr) minmax(420px, 1.1fr);
 }
 
+.manager-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.manager-focus {
+  grid-column: 1 / -1;
+}
+
+.manager-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.manager-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.compact-row {
+  padding: 11px 13px;
+}
+
+.task-list > .empty-state {
+  min-height: 132px;
+}
+
 .verification-workbench {
   display: grid;
   grid-template-columns: minmax(320px, 0.72fr) minmax(560px, 1.28fr);
@@ -974,6 +1005,8 @@ textarea {
   .verification-workbench,
   .ops-grid,
   .integrations-grid,
+  .manager-grid,
+  .manager-stat-grid,
   .media-lab-grid,
   .evidence-split,
   .partner-grid {
@@ -1007,6 +1040,7 @@ textarea {
 
   .field-grid,
   .integration-summary,
+  .manager-stat-grid,
   .draft-form,
   .table-row,
   .table-row.salesman,
