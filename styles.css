@@ -455,6 +455,142 @@ h2 {
   gap: 14px;
 }
 
+.distribution-dashboard {
+  display: grid;
+  gap: 16px;
+}
+
+.command-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+  gap: 22px;
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(6, 182, 200, 0.08), transparent 45%),
+    var(--surface);
+}
+
+.command-hero h2 {
+  margin-bottom: 8px;
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.command-hero p {
+  max-width: 680px;
+  color: var(--muted);
+  margin-bottom: 0;
+}
+
+.command-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.signal-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.signal-strip article {
+  display: grid;
+  gap: 8px;
+  min-height: 112px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 28px rgba(24, 33, 40, 0.06);
+}
+
+.signal-strip span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.signal-strip strong {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.progress-bar {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e3edf0;
+}
+
+.progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--cyan);
+}
+
+.admin-command-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(360px, 1.15fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.wide-panel {
+  grid-column: 1 / -1;
+}
+
+.admin-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.admin-action-grid button {
+  min-height: 46px;
+}
+
+.brand-movement-grid,
+.signal-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.movement-row,
+.signal-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.movement-row div,
+.signal-row div {
+  display: grid;
+  gap: 3px;
+}
+
+.movement-row span,
+.signal-row span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.movement-row b {
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+.compact-list {
+  max-height: 400px;
+}
+
 .manager-focus {
   grid-column: 1 / -1;
 }
@@ -1034,6 +1170,10 @@ textarea {
   .integrations-grid,
   .manager-grid,
   .manager-stat-grid,
+  .command-hero,
+  .command-hero-grid,
+  .signal-strip,
+  .admin-command-grid,
   .media-lab-grid,
   .evidence-split,
   .partner-grid {
@@ -1068,6 +1208,7 @@ textarea {
   .field-grid,
   .integration-summary,
   .manager-stat-grid,
+  .admin-action-grid,
   .draft-form,
   .table-row,
   .table-row.outlet-row,

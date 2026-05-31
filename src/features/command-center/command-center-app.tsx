@@ -988,18 +988,25 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
               pendingAdminReview={pendingDraftCount || pendingCount}
             />
           ) : (
-          <>
-            <section className="metrics-grid">
-              <Metric label="Pending verification" value={pendingDraftCount || pendingCount} detail="Human-in-the-loop queue" />
-              <Metric label="Verified outlets" value={verifiedCount} detail="Partner-visible records" />
-              <Metric label="Sales app coverage" value={`${Math.round((verifiedCount / recordCount) * 100)}%`} detail="Beat plan touched today" />
-              <Metric label="Extraction accuracy" value={`${Math.round((highConfidenceCount / recordCount) * 100)}%`} detail="AI suggestions accepted" />
-            </section>
-            <section className="split-layout">
-              <QueuePanel records={records} selectedId={selectedId} onSelect={setSelectedId} />
-              <RecordDetail record={selectedRecord} onVerify={verifyRecord} onSendBack={sendBack} />
-            </section>
-          </>
+            <AdminDistributionDashboard
+              brands={brands}
+              outlets={outlets}
+              salesmen={salesmen}
+              skus={skus}
+              tasks={tasks}
+              payments={payments}
+              orders={orders}
+              bills={bills}
+              records={records}
+              pendingReview={pendingDraftCount || pendingCount}
+              highConfidenceCount={highConfidenceCount}
+              onAddOutlet={() => openCreate("outlet")}
+              onAddProduct={() => openCreate("sku")}
+              onCreateTask={() => openCreate("task")}
+              onAddPayment={() => openCreate("payment")}
+              onOpenVerification={() => setActiveView("verification")}
+              onOpenReports={() => setActiveView("reports")}
+            />
           )
         )}
 
@@ -1101,6 +1108,245 @@ function Metric({ label, value, detail }: { label: string; value: string | numbe
       <strong>{value}</strong>
       <small>{detail}</small>
     </article>
+  );
+}
+
+function AdminDistributionDashboard({
+  brands,
+  outlets,
+  salesmen,
+  skus,
+  tasks,
+  payments,
+  orders,
+  bills,
+  records,
+  pendingReview,
+  highConfidenceCount,
+  onAddOutlet,
+  onAddProduct,
+  onCreateTask,
+  onAddPayment,
+  onOpenVerification,
+  onOpenReports
+}: {
+  brands: BrandOption[];
+  outlets: OutletRow[];
+  salesmen: SalesmanRow[];
+  skus: SkuRow[];
+  tasks: TaskRow[];
+  payments: PaymentRow[];
+  orders: OrderRow[];
+  bills: BillRow[];
+  records: CommandRecord[];
+  pendingReview: number;
+  highConfidenceCount: number;
+  onAddOutlet: () => void;
+  onAddProduct: () => void;
+  onCreateTask: () => void;
+  onAddPayment: () => void;
+  onOpenVerification: () => void;
+  onOpenReports: () => void;
+}) {
+  const activeOutlets = outlets.filter((outlet) => outlet.status === "Active").length;
+  const prospectOutlets = outlets.filter((outlet) => outlet.status === "Prospect").length;
+  const activeReps = salesmen.filter((person) => person.status === "Active").length;
+  const billedValue = bills.reduce((total, bill) => total + bill.totalAmount, 0);
+  const openOrders = orders.filter((order) => !["Delivered", "Cancelled"].includes(order.status));
+  const openOrderValue = openOrders.reduce((total, order) => total + order.expectedValue, 0);
+  const collectedValue = payments.reduce((total, payment) => total + payment.amountCollected, 0);
+  const outstandingValue = payments.reduce((total, payment) => total + Math.max(payment.amountDue - payment.amountCollected, 0), 0);
+  const highRiskPayments = payments.filter((payment) => ["High", "Critical"].includes(payment.riskLevel) || ["Overdue", "Disputed"].includes(payment.status));
+  const openTasks = tasks.filter((task) => !["Completed", "Cancelled"].includes(task.status));
+  const urgentTasks = openTasks.filter((task) => ["High", "Critical"].includes(task.priority) || task.status === "Overdue");
+  const recordCount = Math.max(records.length, 1);
+  const extractionAccuracy = Math.round((highConfidenceCount / recordCount) * 100);
+  const collectionCoverage = payments.length ? Math.round((collectedValue / Math.max(collectedValue + outstandingValue, 1)) * 100) : 0;
+  const orderToBillRatio = orders.length ? Math.round((bills.length / Math.max(orders.length, 1)) * 100) : 0;
+
+  const brandMovement = brands.map((brand) => {
+    const brandBills = bills.filter((bill) => bill.brand === brand.name).reduce((total, bill) => total + bill.totalAmount, 0);
+    const brandOrders = orders.filter((order) => order.brand === brand.name).reduce((total, order) => total + order.expectedValue, 0);
+    const outletCount = outlets.filter((outlet) => outlet.brand === brand.name).length;
+    const skuCount = skus.filter((sku) => sku.brand === brand.name).length;
+    return { name: brand.name, value: brandBills + brandOrders, outletCount, skuCount };
+  }).sort((a, b) => b.value - a.value);
+
+  const territoryCoverage = outlets.reduce<Record<string, { outlets: number; reps: Set<string>; prospects: number }>>((coverage, outlet) => {
+    const territory = outlet.territory || outlet.city || "Unassigned";
+    const current = coverage[territory] ?? { outlets: 0, reps: new Set<string>(), prospects: 0 };
+    current.outlets += 1;
+    if (outlet.assignedSalesman && outlet.assignedSalesman !== "Unassigned") current.reps.add(outlet.assignedSalesman);
+    if (outlet.status === "Prospect") current.prospects += 1;
+    coverage[territory] = current;
+    return coverage;
+  }, {});
+
+  const recentSignals = [
+    ...orders.slice(0, 2).map((order) => ({ title: order.outlet, detail: `${order.brand} order pipeline - ${money(order.expectedValue)}`, tag: order.status })),
+    ...payments.slice(0, 2).map((payment) => ({ title: payment.outlet, detail: `${payment.brand} outstanding - ${money(Math.max(payment.amountDue - payment.amountCollected, 0))}`, tag: payment.riskLevel })),
+    ...tasks.slice(0, 2).map((task) => ({ title: task.title, detail: `${task.assignedTo} - ${task.outlet}`, tag: task.priority }))
+  ].slice(0, 5);
+
+  return (
+    <section className="distribution-dashboard">
+      <section className="command-hero panel">
+        <div>
+          <p className="eyebrow">Distribution control room</p>
+          <h2>Market execution at a glance</h2>
+          <p>Track field coverage, brand movement, orders, collections, tasks, and data quality from one operating dashboard.</p>
+        </div>
+        <div className="command-hero-grid">
+          <Field label="Active clients" value={String(brands.filter((brand) => brand.status === "Active").length)} />
+          <Field label="Products / SKUs" value={String(skus.length)} />
+          <Field label="Active reps" value={String(activeReps)} />
+          <Field label="Cities / territories" value={String(new Set(outlets.map((outlet) => outlet.territory || outlet.city)).size)} />
+        </div>
+      </section>
+
+      <section className="metrics-grid">
+        <Metric label="Billed value" value={money(billedValue)} detail={`${bills.length} verified bills`} />
+        <Metric label="Open pipeline" value={money(openOrderValue)} detail={`${openOrders.length} active orders`} />
+        <Metric label="Outstanding" value={money(outstandingValue)} detail={`${collectionCoverage}% collection coverage`} />
+        <Metric label="Outlet universe" value={activeOutlets} detail={`${prospectOutlets} prospects in CRM`} />
+      </section>
+
+      <section className="signal-strip">
+        <article>
+          <span>Order to bill</span>
+          <strong>{orderToBillRatio}%</strong>
+          <ProgressBar value={orderToBillRatio} />
+        </article>
+        <article>
+          <span>Collection coverage</span>
+          <strong>{collectionCoverage}%</strong>
+          <ProgressBar value={collectionCoverage} />
+        </article>
+        <article>
+          <span>Extraction confidence</span>
+          <strong>{extractionAccuracy}%</strong>
+          <ProgressBar value={extractionAccuracy} />
+        </article>
+        <article>
+          <span>Admin review queue</span>
+          <strong>{pendingReview}</strong>
+          <button className="link-button" onClick={onOpenVerification}>Open queue</button>
+        </article>
+      </section>
+
+      <section className="admin-command-grid">
+        <article className="panel command-actions-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Admin Actions</h2>
+              <p>Fast controls for the master data and daily operating loop.</p>
+            </div>
+          </div>
+          <div className="admin-action-grid">
+            <button className="primary-button" onClick={onAddOutlet}>Add Outlet</button>
+            <button className="primary-button" onClick={onAddProduct}>Add Product / SKU</button>
+            <button className="secondary-button" onClick={onCreateTask}>Create Task</button>
+            <button className="secondary-button" onClick={onAddPayment}>Add Payment</button>
+            <button className="secondary-button" onClick={onOpenVerification}>Verification Queue</button>
+            <button className="secondary-button" onClick={onOpenReports}>Reports</button>
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Payment Risk</h2>
+          <div className="task-list compact-list">
+            {highRiskPayments.slice(0, 5).map((payment) => (
+              <article className="task-row compact-row" key={payment.id}>
+                <div className="queue-top">
+                  <strong>{payment.outlet}</strong>
+                  <span className="tag warn">{payment.riskLevel}</span>
+                </div>
+                <p>{payment.brand} - {money(Math.max(payment.amountDue - payment.amountCollected, 0))} outstanding</p>
+              </article>
+            ))}
+            {!highRiskPayments.length && <p className="empty-state">No high-risk payments yet.</p>}
+          </div>
+        </article>
+
+        <article className="panel wide-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Brand And SKU Movement</h2>
+              <p>Client-wise value, outlet spread, and product readiness.</p>
+            </div>
+          </div>
+          <div className="brand-movement-grid">
+            {brandMovement.slice(0, 6).map((brand) => (
+              <article className="movement-row" key={brand.name}>
+                <div>
+                  <strong>{brand.name}</strong>
+                  <span>{brand.outletCount} outlets - {brand.skuCount} SKUs</span>
+                </div>
+                <b>{money(brand.value)}</b>
+              </article>
+            ))}
+            {!brandMovement.length && <p className="empty-state">Add clients and products to start tracking movement.</p>}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Territory Coverage</h2>
+          <div className="task-list compact-list">
+            {Object.entries(territoryCoverage).slice(0, 6).map(([territory, coverage]) => (
+              <article className="task-row compact-row" key={territory}>
+                <div className="queue-top">
+                  <strong>{territory}</strong>
+                  <span className="tag blue">{coverage.outlets} outlets</span>
+                </div>
+                <p>{coverage.reps.size} reps assigned - {coverage.prospects} prospects</p>
+              </article>
+            ))}
+            {!Object.keys(territoryCoverage).length && <p className="empty-state">No territory coverage yet.</p>}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Team Follow-Ups</h2>
+          <div className="task-list compact-list">
+            {urgentTasks.slice(0, 5).map((task) => (
+              <article className="task-row compact-row" key={task.id}>
+                <div className="queue-top">
+                  <strong>{task.title}</strong>
+                  <span className={`tag ${task.priority === "High" || task.priority === "Critical" ? "warn" : "blue"}`}>{task.priority}</span>
+                </div>
+                <p>{task.assignedTo} - {task.outlet}</p>
+              </article>
+            ))}
+            {!urgentTasks.length && <p className="empty-state">No urgent follow-ups right now.</p>}
+          </div>
+        </article>
+
+        <article className="panel wide-panel">
+          <h2>Recent Operating Signals</h2>
+          <div className="signal-list">
+            {recentSignals.map((signal, index) => (
+              <article className="signal-row" key={`${signal.title}-${index}`}>
+                <div>
+                  <strong>{signal.title}</strong>
+                  <span>{signal.detail}</span>
+                </div>
+                <span className="tag blue">{signal.tag}</span>
+              </article>
+            ))}
+            {!recentSignals.length && <p className="empty-state">No orders, payments, or tasks have been captured yet.</p>}
+          </div>
+        </article>
+      </section>
+    </section>
+  );
+}
+
+function ProgressBar({ value }: { value: number }) {
+  const safeValue = Math.max(0, Math.min(100, Math.round(value)));
+  return (
+    <div className="progress-bar" aria-label={`${safeValue}%`}>
+      <span style={{ width: `${safeValue}%` }} />
+    </div>
   );
 }
 
