@@ -15,12 +15,13 @@ import type {
   OutletRow,
   PaymentRow,
   SalesmanRow,
+  SkuRow,
   TaskRow,
   TerritoryRow,
   VerificationDraftRecord
 } from "./types";
 
-type View = "command" | "inbox" | "verification" | "media" | "outlets" | "tasks" | "payments" | "orders" | "bills" | "territories" | "reports" | "partners" | "ops" | "users" | "integrations";
+type View = "command" | "inbox" | "verification" | "media" | "outlets" | "products" | "tasks" | "payments" | "orders" | "bills" | "territories" | "reports" | "partners" | "ops" | "users" | "integrations";
 type MediaLabResult = {
   fileName: string;
   fileType: string;
@@ -54,13 +55,14 @@ type MediaLabResult = {
   };
   warning?: string;
 };
-type ModalType = "outlet" | "brand" | "salesman" | "user" | "task" | "territory" | "payment" | "order" | "bill" | null;
+type ModalType = "outlet" | "brand" | "sku" | "salesman" | "user" | "task" | "territory" | "payment" | "order" | "bill" | null;
 type BulkImportType = Exclude<ModalType, null>;
 type IntegrationNotice = { type: "success" | "error"; message: string };
 type SalesWorkflow = "visit" | "order" | "payment" | "evidence";
 type EditableMasterData =
   | { type: "outlet"; record: OutletRow }
   | { type: "brand"; record: BrandOption }
+  | { type: "sku"; record: SkuRow }
   | { type: "salesman"; record: SalesmanRow }
   | { type: "user"; record: AppUserRow }
   | { type: "task"; record: TaskRow }
@@ -70,6 +72,7 @@ type EditableMasterData =
   | { type: "bill"; record: BillRow };
 type CommandCenterActions = {
   createBrand: (formData: FormData) => Promise<BrandOption>;
+  createSku: (formData: FormData) => Promise<SkuRow>;
   createOutlet: (formData: FormData) => Promise<OutletRow>;
   createSalesman: (formData: FormData) => Promise<SalesmanRow>;
   createUser: (formData: FormData) => Promise<AppUserRow>;
@@ -79,6 +82,7 @@ type CommandCenterActions = {
   createOrder: (formData: FormData) => Promise<OrderRow>;
   createBill: (formData: FormData) => Promise<BillRow>;
   updateBrand: (formData: FormData) => Promise<BrandOption>;
+  updateSku: (formData: FormData) => Promise<SkuRow>;
   updateOutlet: (formData: FormData) => Promise<OutletRow>;
   updateSalesman: (formData: FormData) => Promise<SalesmanRow>;
   updateUser: (formData: FormData) => Promise<AppUserRow>;
@@ -108,6 +112,7 @@ const viewTitles: Record<View, string> = {
   verification: "Verification Queue",
   media: "Media Extraction Lab",
   outlets: "Outlet Master",
+  products: "Products / SKUs",
   tasks: "Tasks",
   payments: "Payments",
   orders: "Orders",
@@ -124,14 +129,20 @@ const bulkTemplates: Record<BulkImportType, { title: string; filename: string; c
   outlet: {
     title: "Outlet Bulk Import",
     filename: "shipd2r-outlet-import-template.csv",
-    columns: ["name", "owner", "phone", "city", "channel", "brand", "status"],
-    sample: ["Sri Lakshmi Stores", "Ramesh Kumar", "9876543210", "Tumkur", "Kirana store", "NourishCo", "Active"]
+    columns: ["name", "owner", "phone", "city", "channel", "brand", "territory", "assignedSalesman", "status"],
+    sample: ["Sri Lakshmi Stores", "Ramesh Kumar", "9876543210", "Tumkur", "Kirana store", "NourishCo", "Tumkur Central", "Rahul Sharma", "Active"]
   },
   brand: {
     title: "Client Bulk Import",
     filename: "shipd2r-client-import-template.csv",
     columns: ["name", "category", "contact", "status"],
     sample: ["NourishCo", "Packaged foods", "Ananya Rao", "Active"]
+  },
+  sku: {
+    title: "Product / SKU Bulk Import",
+    filename: "shipd2r-product-sku-import-template.csv",
+    columns: ["name", "code", "brand", "category", "unit", "mrp", "status"],
+    sample: ["NourishCo Millet Bar 40g", "NC-MB-40", "NourishCo", "Snack bar", "box", "480", "Active"]
   },
   salesman: {
     title: "Sales Rep Bulk Import",
@@ -148,8 +159,8 @@ const bulkTemplates: Record<BulkImportType, { title: string; filename: string; c
   task: {
     title: "Task Bulk Import",
     filename: "shipd2r-task-import-template.csv",
-    columns: ["title", "description", "taskType", "outlet", "brand", "dueDate", "priority", "status"],
-    sample: ["Payment follow-up", "Confirm pending payment collection", "Payment follow-up", "Sri Lakshmi Stores", "NourishCo", "2026-05-22", "High", "Open"]
+    columns: ["title", "description", "taskType", "assignedTo", "outlet", "brand", "dueDate", "priority", "status"],
+    sample: ["Payment follow-up", "Confirm pending payment collection", "Payment follow-up", "Rahul Sharma", "Sri Lakshmi Stores", "NourishCo", "2026-05-22", "High", "Open"]
   },
   territory: {
     title: "Territory Bulk Import",
@@ -257,6 +268,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const [brands, setBrands] = useState<BrandOption[]>(initialData.brands);
   const [outlets, setOutlets] = useState<OutletRow[]>(initialData.outlets);
   const [salesmen, setSalesmen] = useState<SalesmanRow[]>(initialData.salesmen);
+  const [skus, setSkus] = useState<SkuRow[]>(initialData.skus);
   const [territories, setTerritories] = useState<TerritoryRow[]>(initialData.territories);
   const [payments, setPayments] = useState<PaymentRow[]>(initialData.payments);
   const [orders, setOrders] = useState<OrderRow[]>(initialData.orders);
@@ -518,6 +530,12 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       setActiveView("partners");
     }
 
+    if (modalType === "sku") {
+      const saved = isEditing ? await actions.updateSku(form) : await actions.createSku(form);
+      setSkus((current) => (isEditing ? current.map((sku) => (sku.id === saved.id ? saved : sku)) : [saved, ...current]));
+      setActiveView("products");
+    }
+
     if (modalType === "salesman") {
       const saved = isEditing ? await actions.updateSalesman(form) : await actions.createSalesman(form);
       setSalesmen((current) => (isEditing ? current.map((person) => (person.id === saved.id ? saved : person)) : [saved, ...current]));
@@ -685,6 +703,17 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       }
       setBrands((current) => [...savedRows, ...current]);
       setActiveView("partners");
+    }
+
+    if (type === "sku") {
+      const savedRows: SkuRow[] = [];
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.sku.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Active" : row[column] ?? ""));
+        savedRows.push(await actions.createSku(form));
+      }
+      setSkus((current) => [...savedRows, ...current]);
+      setActiveView("products");
     }
 
     if (type === "salesman") {
@@ -863,6 +892,10 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Add Outlet", action: () => openCreate("outlet") },
       { label: "Bulk Import", action: () => openBulkImport("outlet") }
     ],
+    products: [
+      { label: "Add Product", action: () => openCreate("sku") },
+      { label: "Bulk Import", action: () => openBulkImport("sku") }
+    ],
     tasks: [
       { label: "Create Task", action: () => openCreate("task") },
       { label: "Bulk Import", action: () => openBulkImport("task") }
@@ -886,6 +919,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     reports: [{ label: "Generate Report", action: () => setActiveView("reports") }],
     partners: [
       { label: "Add Client", action: () => openCreate("brand") },
+      { label: "Add Product", action: () => openCreate("sku") },
       { label: "Bulk Import", action: () => openBulkImport("brand") }
     ],
     ops: [
@@ -909,7 +943,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         <nav className="nav-tabs" aria-label="Views">
           {visibleViews.map((view) => (
             <button key={view} className={`nav-tab ${activeView === view ? "active" : ""}`} onClick={() => setActiveView(view)}>
-              <span>{view === "ops" ? "Sales App" : view === "inbox" ? "Retailer WhatsApp" : view === "users" ? "Users" : view[0].toUpperCase() + view.slice(1)}</span>
+              <span>{view === "ops" ? "Sales App" : view === "inbox" ? "Retailer WhatsApp" : view === "users" ? "Users" : view === "products" ? "Products / SKUs" : view[0].toUpperCase() + view.slice(1)}</span>
             </button>
           ))}
         </nav>
@@ -945,6 +979,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
               brands={brands}
               outlets={outlets}
               salesmen={salesmen}
+              skus={skus}
               tasks={tasks}
               payments={payments}
               orders={orders}
@@ -1002,8 +1037,9 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
 
         {activeView === "media" && <MediaLabView aiProvider={aiProvider} />}
         {activeView === "outlets" && <OutletsView outlets={outlets} onAdd={() => openCreate("outlet")} onEdit={(outlet) => openEdit({ type: "outlet", record: outlet })} onBulkImport={() => openBulkImport("outlet")} />}
+        {activeView === "products" && <ProductsView skus={skus} onAdd={() => openCreate("sku")} onEdit={(sku) => openEdit({ type: "sku", record: sku })} onBulkImport={() => openBulkImport("sku")} />}
         {activeView === "partners" && (
-          <PartnersView brands={brands} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onBulkImport={() => openBulkImport("brand")} />
+          <PartnersView brands={brands} skus={skus} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onAddSku={() => openCreate("sku")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onBulkImport={() => openBulkImport("brand")} />
         )}
         {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => openCreate("salesman")} onEdit={(person) => openEdit({ type: "salesman", record: person })} onBulkImport={() => openBulkImport("salesman")} />}
         {activeView === "users" && <UsersView users={users} onAdd={() => openCreate("user")} onEdit={(user) => openEdit({ type: "user", record: user })} onBulkImport={() => openBulkImport("user")} />}
@@ -1031,6 +1067,9 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           type={modalType}
           brands={brands}
           outlets={outlets}
+          territories={territories}
+          salesmen={salesmen}
+          users={users}
           initialValues={editingItem?.type === modalType ? editingItem.record : undefined}
           onClose={() => {
             setEditingItem(null);
@@ -1069,6 +1108,7 @@ function ManagerDashboard({
   brands,
   outlets,
   salesmen,
+  skus,
   tasks,
   payments,
   orders,
@@ -1079,6 +1119,7 @@ function ManagerDashboard({
   brands: BrandOption[];
   outlets: OutletRow[];
   salesmen: SalesmanRow[];
+  skus: SkuRow[];
   tasks: TaskRow[];
   payments: PaymentRow[];
   orders: OrderRow[];
@@ -1115,7 +1156,7 @@ function ManagerDashboard({
         <Metric label="Billed value" value={money(billedValue)} detail={`${bills.length} bills captured`} />
         <Metric label="Outstanding" value={money(outstandingValue)} detail={`${money(collectedValue)} collected`} />
         <Metric label="Open order pipeline" value={money(openOrderValue)} detail={`${openOrders.length} active order intents`} />
-        <Metric label="Outlet universe" value={activeOutlets} detail={`${prospectOutlets} prospects in CRM`} />
+        <Metric label="Outlet universe" value={activeOutlets} detail={`${prospectOutlets} prospects, ${skus.length} SKUs`} />
       </section>
 
       <section className="manager-grid">
@@ -1862,20 +1903,24 @@ function OutletsView({ outlets, onAdd, onEdit, onBulkImport }: { outlets: Outlet
           </div>
         </div>
         <div className="data-table">
-          <div className="table-row header">
+          <div className="table-row outlet-row header">
             <span>Outlet</span>
             <span>City</span>
             <span>Channel</span>
             <span>Brand</span>
+            <span>Territory</span>
+            <span>Sales rep</span>
             <span>Status</span>
             <span>Action</span>
           </div>
           {outlets.map((outlet) => (
-            <div className="table-row" key={outlet.id}>
+            <div className="table-row outlet-row" key={outlet.id}>
               <strong>{outlet.name}</strong>
               <span>{outlet.city}</span>
               <span>{outlet.channel}</span>
               <span>{outlet.brand}</span>
+              <span>{outlet.territory}</span>
+              <span>{outlet.assignedSalesman}</span>
               <span className={`tag ${outlet.status === "Prospect" ? "warn" : ""}`}>{outlet.status}</span>
               <button className="link-button" onClick={() => onEdit(outlet)}>
                 Edit
@@ -1888,20 +1933,49 @@ function OutletsView({ outlets, onAdd, onEdit, onBulkImport }: { outlets: Outlet
   );
 }
 
+function ProductsView({ skus, onAdd, onEdit, onBulkImport }: { skus: SkuRow[]; onAdd: () => void; onEdit: (sku: SkuRow) => void; onBulkImport: () => void }) {
+  return (
+    <CrudPanel title="Products / SKUs" description="Brand-level product master for order capture, bill line items, SKU movement, and retailer demand." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Product">
+      {skus.map((sku) => (
+        <article className="task-row" key={sku.id}>
+          <div className="queue-top">
+            <strong>{sku.name}</strong>
+            <div className="inline-actions">
+              <span className="tag blue">{sku.brand}</span>
+              <button className="link-button" onClick={() => onEdit(sku)}>Edit</button>
+            </div>
+          </div>
+          <p>{sku.category} - {sku.code || "No SKU code"}</p>
+          <div className="record-meta">
+            <span>{sku.unit}</span>
+            <span>{money(sku.mrp)}</span>
+            <span className="tag">{sku.status}</span>
+          </div>
+        </article>
+      ))}
+      {!skus.length && <p className="empty-state">No products or SKUs added yet.</p>}
+    </CrudPanel>
+  );
+}
+
 function PartnersView({
   brands,
+  skus,
   records,
   partnerFilter,
   onFilter,
   onAdd,
+  onAddSku,
   onEdit,
   onBulkImport
 }: {
   brands: BrandOption[];
+  skus: SkuRow[];
   records: CommandRecord[];
   partnerFilter: string;
   onFilter: (value: string) => void;
   onAdd: () => void;
+  onAddSku: () => void;
   onEdit: (brand: BrandOption) => void;
   onBulkImport: () => void;
 }) {
@@ -1924,6 +1998,9 @@ function PartnersView({
           <button className="secondary-button" onClick={onBulkImport}>
             Bulk Import
           </button>
+          <button className="secondary-button" onClick={onAddSku}>
+            Add Product
+          </button>
           <button className="primary-button" onClick={onAdd}>
             Add Client
           </button>
@@ -1934,6 +2011,7 @@ function PartnersView({
           .filter((brand) => partnerFilter === "all" || partnerFilter === brand.name)
           .map((brand) => {
             const brandRecords = records.filter((record) => record.partner === brand.name);
+            const brandSkus = skus.filter((sku) => sku.brand === brand.name);
             const units = brandRecords.reduce((sum, record) => sum + record.units, 0);
             const value = brandRecords.reduce((sum, record) => sum + record.value, 0);
             return (
@@ -1949,6 +2027,7 @@ function PartnersView({
                   <Field label="Verified outlets" value={brandRecords.length} />
                   <Field label="Sales" value={money(value)} />
                   <Field label="Units" value={units} />
+                  <Field label="Products / SKUs" value={brandSkus.length} />
                   <Field label="Status" value={brand.status} />
                 </div>
               </article>
@@ -2060,6 +2139,7 @@ function TasksView({ tasks, onAdd, onEdit, onBulkImport }: { tasks: TaskRow[]; o
               </div>
               <p>{task.description}</p>
               <div className="record-meta">
+                <span>{task.assignedTo}</span>
                 <span>{task.outlet}</span>
                 <span>{task.brand}</span>
                 <span>{task.dueDate}</span>
@@ -2409,6 +2489,9 @@ function MasterDataModal({
   type,
   brands,
   outlets,
+  territories,
+  salesmen,
+  users,
   initialValues,
   onClose,
   onSubmit
@@ -2416,7 +2499,10 @@ function MasterDataModal({
   type: Exclude<ModalType, null>;
   brands: BrandOption[];
   outlets: OutletRow[];
-  initialValues?: OutletRow | BrandOption | SalesmanRow | AppUserRow | TaskRow | TerritoryRow | PaymentRow | OrderRow | BillRow;
+  territories: TerritoryRow[];
+  salesmen: SalesmanRow[];
+  users: AppUserRow[];
+  initialValues?: OutletRow | BrandOption | SkuRow | SalesmanRow | AppUserRow | TaskRow | TerritoryRow | PaymentRow | OrderRow | BillRow;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -2424,6 +2510,8 @@ function MasterDataModal({
   const noun =
     type === "brand"
       ? "Brand Client"
+      : type === "sku"
+        ? "Product / SKU"
       : type === "salesman"
         ? "Sales Rep"
         : type === "user"
@@ -2442,8 +2530,12 @@ function MasterDataModal({
   const title = `${isEditing ? "Edit" : type === "task" ? "Create" : "Add"} ${noun}`;
   const brandOptions = brands.length ? brands.map((brand) => brand.name) : ["Unassigned"];
   const outletOptions = outlets.length ? outlets.map((outlet) => outlet.name) : ["Unassigned"];
+  const territoryOptions = ["Unassigned", ...territories.map((territory) => territory.name)];
+  const salesmanOptions = ["Unassigned", ...salesmen.map((person) => person.name)];
+  const assigneeOptions = ["Unassigned", ...users.filter((user) => user.role !== "brand_partner_viewer" && user.role !== "brand_partner_manager").map((user) => user.name)];
   const outletValues = type === "outlet" ? (initialValues as OutletRow | undefined) : undefined;
   const brandValues = type === "brand" ? (initialValues as BrandOption | undefined) : undefined;
+  const skuValues = type === "sku" ? (initialValues as SkuRow | undefined) : undefined;
   const salesmanValues = type === "salesman" ? (initialValues as SalesmanRow | undefined) : undefined;
   const userValues = type === "user" ? (initialValues as AppUserRow | undefined) : undefined;
   const taskValues = type === "task" ? (initialValues as TaskRow | undefined) : undefined;
@@ -2473,6 +2565,8 @@ function MasterDataModal({
                 <Input name="city" label="City" defaultValue={outletValues?.city} />
                 <Input name="channel" label="Channel type" defaultValue={outletValues?.channel} />
                 <Select name="brand" label="Brand client" options={brandOptions} defaultValue={outletValues?.brand} />
+                <Select name="territory" label="Territory / beat" options={territoryOptions} defaultValue={outletValues?.territory} />
+                <Select name="assignedSalesman" label="Assigned sales rep" options={salesmanOptions} defaultValue={outletValues?.assignedSalesman} />
                 <Select name="status" label="Status" options={["Active", "Prospect", "Inactive"]} defaultValue={outletValues?.status} />
               </>
             )}
@@ -2482,6 +2576,17 @@ function MasterDataModal({
                 <Input name="category" label="Category" defaultValue={brandValues?.category} />
                 <Input name="contact" label="Contact person" defaultValue={brandValues?.contact} />
                 <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={brandValues?.status} />
+              </>
+            )}
+            {type === "sku" && (
+              <>
+                <Input name="name" label="Product / SKU name" defaultValue={skuValues?.name} />
+                <Input name="code" label="SKU code" required={false} defaultValue={skuValues?.code} />
+                <Select name="brand" label="Brand client" options={brandOptions} defaultValue={skuValues?.brand} />
+                <Input name="category" label="Category" required={false} defaultValue={skuValues?.category === "Uncategorized" ? "" : skuValues?.category} />
+                <Input name="unit" label="Unit / pack size" required={false} defaultValue={skuValues?.unit === "Unit" ? "" : skuValues?.unit} />
+                <Input name="mrp" label="MRP" type="number" required={false} defaultValue={skuValues?.mrp ? String(skuValues.mrp) : undefined} />
+                <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={skuValues?.status} />
               </>
             )}
             {type === "salesman" && (
@@ -2508,6 +2613,7 @@ function MasterDataModal({
                 <Input name="title" label="Task title" defaultValue={taskValues?.title} />
                 <Select name="taskType" label="Task type" options={["Payment follow-up", "Order confirmation", "Delivery follow-up", "Complaint resolution", "Stock refill", "Display material request", "New outlet onboarding", "Manager escalation"]} defaultValue={taskValues?.taskType} />
                 <Input name="description" label="Description" defaultValue={taskValues?.description} />
+                <Select name="assignedTo" label="Assigned to" options={assigneeOptions} defaultValue={taskValues?.assignedTo} />
                 <Input name="outlet" label="Outlet" defaultValue={taskValues?.outlet === "Unassigned" ? "" : taskValues?.outlet} />
                 <Select name="brand" label="Brand client" options={brandOptions} defaultValue={taskValues?.brand} />
                 <Input name="dueDate" label="Due date" type="date" required={false} defaultValue={taskValues?.dueDate === "No due date" ? "" : taskValues?.dueDate} />

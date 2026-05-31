@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { AppUserRow, BillRow, BrandOption, OrderRow, OutletRow, PaymentRow, SalesmanRow, TaskRow, TerritoryRow, VerificationDraftRecord } from "./types";
+import type { AppUserRow, BillRow, BrandOption, OrderRow, OutletRow, PaymentRow, SalesmanRow, SkuRow, TaskRow, TerritoryRow, VerificationDraftRecord } from "./types";
 
 const statusMap = {
   Active: "active",
@@ -25,6 +25,8 @@ const outletSchema = z.object({
   city: z.string().min(1),
   channel: z.string().min(1),
   brand: z.string().optional(),
+  territory: z.string().optional(),
+  assignedSalesman: z.string().optional(),
   status: z.enum(["Active", "Prospect", "Inactive"])
 });
 
@@ -74,6 +76,7 @@ const taskSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1),
   taskType: z.string().min(1),
+  assignedTo: z.string().optional(),
   outlet: z.string().min(1),
   brand: z.string().min(1),
   dueDate: z.string().optional(),
@@ -86,6 +89,16 @@ const territorySchema = z.object({
   city: z.string().min(1),
   state: z.string().min(1),
   region: z.string().optional(),
+  status: z.enum(["Active", "Inactive"])
+});
+
+const skuSchema = z.object({
+  name: z.string().min(1),
+  code: z.string().optional(),
+  brand: z.string().min(1),
+  category: z.string().optional(),
+  unit: z.string().optional(),
+  mrp: z.string().optional(),
   status: z.enum(["Active", "Inactive"])
 });
 
@@ -214,6 +227,10 @@ function outletStatus(status?: string | null): OutletRow["status"] {
   return "Active";
 }
 
+function skuStatus(status?: string | null): SkuRow["status"] {
+  return status === "inactive" ? "Inactive" : "Active";
+}
+
 function taskStatus(status?: string | null): TaskRow["status"] {
   if (status === "in_progress") return "In progress";
   if (status === "waiting_for_response") return "Waiting for response";
@@ -312,6 +329,36 @@ async function findOutletIdByName(supabase: ReturnType<typeof createSupabaseAdmi
   const { data, error } = await supabase.from("outlets").select("id").eq("name", outletName).limit(1).maybeSingle();
   if (error) throw new Error(error.message);
   return data?.id ?? null;
+}
+
+async function findUserIdByName(supabase: ReturnType<typeof createSupabaseAdminClient>, userName?: string) {
+  if (!userName || userName === "Unassigned") return null;
+  const { data, error } = await supabase.from("users").select("id").eq("name", userName).limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.id ?? null;
+}
+
+async function findTerritoryIdByName(supabase: ReturnType<typeof createSupabaseAdminClient>, territoryName?: string) {
+  if (!territoryName || territoryName === "Unassigned") return null;
+  const { data, error } = await supabase.from("territories").select("id").eq("name", territoryName).limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.id ?? null;
+}
+
+async function findExecutiveIdByName(supabase: ReturnType<typeof createSupabaseAdminClient>, executiveName?: string) {
+  if (!executiveName || executiveName === "Unassigned") return null;
+  const { data, error } = await supabase
+    .from("field_executives")
+    .select("id,users!field_executives_user_id_fkey(name)")
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as Array<{ id: string; users?: { name?: string | null } | { name?: string | null }[] | null }>;
+  const match = rows.find((person) => {
+    const user = Array.isArray(person.users) ? person.users[0] : person.users;
+    return user?.name === executiveName;
+  });
+  return match?.id ?? null;
 }
 
 function draftStatus(status?: string | null): VerificationDraftRecord["status"] {
@@ -452,6 +499,94 @@ export async function updateBrandAction(formData: FormData): Promise<BrandOption
   };
 }
 
+export async function createSkuAction(formData: FormData): Promise<SkuRow> {
+  const input = skuSchema.parse({
+    name: formValue(formData, "name"),
+    code: formValue(formData, "code"),
+    brand: formValue(formData, "brand"),
+    category: formValue(formData, "category"),
+    unit: formValue(formData, "unit"),
+    mrp: formValue(formData, "mrp"),
+    status: formValue(formData, "status")
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const brandId = await findBrandIdByName(supabase, input.brand);
+  if (!brandId) throw new Error("Choose a valid brand client before adding a product/SKU.");
+
+  const { data, error } = await supabase
+    .from("skus")
+    .insert({
+      brand_id: brandId,
+      name: input.name,
+      code: input.code || null,
+      category: input.category || null,
+      unit: input.unit || null,
+      mrp: input.mrp ? numberInput(input.mrp) : 0,
+      status: statusMap[input.status]
+    })
+    .select("id,name,code,category,unit,mrp,status")
+    .single();
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return {
+    id: data.id,
+    name: data.name,
+    code: data.code ?? "",
+    brand: input.brand,
+    category: data.category ?? "Uncategorized",
+    unit: data.unit ?? "Unit",
+    mrp: numberValue(data.mrp),
+    status: skuStatus(data.status)
+  };
+}
+
+export async function updateSkuAction(formData: FormData): Promise<SkuRow> {
+  const id = formId(formData);
+  const input = skuSchema.parse({
+    name: formValue(formData, "name"),
+    code: formValue(formData, "code"),
+    brand: formValue(formData, "brand"),
+    category: formValue(formData, "category"),
+    unit: formValue(formData, "unit"),
+    mrp: formValue(formData, "mrp"),
+    status: formValue(formData, "status")
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const brandId = await findBrandIdByName(supabase, input.brand);
+  if (!brandId) throw new Error("Choose a valid brand client before updating a product/SKU.");
+
+  const { data, error } = await supabase
+    .from("skus")
+    .update({
+      brand_id: brandId,
+      name: input.name,
+      code: input.code || null,
+      category: input.category || null,
+      unit: input.unit || null,
+      mrp: input.mrp ? numberInput(input.mrp) : 0,
+      status: statusMap[input.status]
+    })
+    .eq("id", id)
+    .select("id,name,code,category,unit,mrp,status")
+    .single();
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return {
+    id: data.id,
+    name: data.name,
+    code: data.code ?? "",
+    brand: input.brand,
+    category: data.category ?? "Uncategorized",
+    unit: data.unit ?? "Unit",
+    mrp: numberValue(data.mrp),
+    status: skuStatus(data.status)
+  };
+}
+
 export async function createOutletAction(formData: FormData): Promise<OutletRow> {
   const input = outletSchema.parse({
     name: formValue(formData, "name"),
@@ -460,11 +595,17 @@ export async function createOutletAction(formData: FormData): Promise<OutletRow>
     city: formValue(formData, "city"),
     channel: formValue(formData, "channel"),
     brand: formValue(formData, "brand"),
+    territory: formValue(formData, "territory"),
+    assignedSalesman: formValue(formData, "assignedSalesman"),
     status: formValue(formData, "status")
   });
 
   const supabase = createSupabaseAdminClient();
-  const brandId = await findBrandIdByName(supabase, input.brand);
+  const [brandId, territoryId, assignedExecutiveId] = await Promise.all([
+    findBrandIdByName(supabase, input.brand),
+    findTerritoryIdByName(supabase, input.territory),
+    findExecutiveIdByName(supabase, input.assignedSalesman)
+  ]);
 
   const { data: outlet, error: outletError } = await supabase
     .from("outlets")
@@ -475,6 +616,8 @@ export async function createOutletAction(formData: FormData): Promise<OutletRow>
       whatsapp_number: input.phone,
       city: input.city,
       channel_type: input.channel,
+      territory_id: territoryId,
+      assigned_executive_id: assignedExecutiveId,
       status: statusMap[input.status]
     })
     .select("id,name,owner_name,phone,city,channel_type,status")
@@ -501,6 +644,8 @@ export async function createOutletAction(formData: FormData): Promise<OutletRow>
     city: outlet.city,
     channel: outlet.channel_type ?? "Unassigned",
     brand: input.brand || "Unassigned",
+    territory: input.territory || "Unassigned",
+    assignedSalesman: input.assignedSalesman || "Unassigned",
     status: outletStatus(outlet.status)
   };
 }
@@ -514,11 +659,17 @@ export async function updateOutletAction(formData: FormData): Promise<OutletRow>
     city: formValue(formData, "city"),
     channel: formValue(formData, "channel"),
     brand: formValue(formData, "brand"),
+    territory: formValue(formData, "territory"),
+    assignedSalesman: formValue(formData, "assignedSalesman"),
     status: formValue(formData, "status")
   });
 
   const supabase = createSupabaseAdminClient();
-  const brandId = await findBrandIdByName(supabase, input.brand);
+  const [brandId, territoryId, assignedExecutiveId] = await Promise.all([
+    findBrandIdByName(supabase, input.brand),
+    findTerritoryIdByName(supabase, input.territory),
+    findExecutiveIdByName(supabase, input.assignedSalesman)
+  ]);
 
   const { data: outlet, error: outletError } = await supabase
     .from("outlets")
@@ -529,6 +680,8 @@ export async function updateOutletAction(formData: FormData): Promise<OutletRow>
       whatsapp_number: input.phone,
       city: input.city,
       channel_type: input.channel,
+      territory_id: territoryId,
+      assigned_executive_id: assignedExecutiveId,
       status: statusMap[input.status],
       updated_at: new Date().toISOString()
     })
@@ -559,6 +712,8 @@ export async function updateOutletAction(formData: FormData): Promise<OutletRow>
     city: outlet.city,
     channel: outlet.channel_type ?? "Unassigned",
     brand: input.brand || "Unassigned",
+    territory: input.territory || "Unassigned",
+    assignedSalesman: input.assignedSalesman || "Unassigned",
     status: outletStatus(outlet.status)
   };
 }
@@ -780,6 +935,7 @@ export async function createTaskAction(formData: FormData): Promise<TaskRow> {
     title: formValue(formData, "title"),
     description: formValue(formData, "description"),
     taskType: formValue(formData, "taskType"),
+    assignedTo: formValue(formData, "assignedTo"),
     outlet: formValue(formData, "outlet"),
     brand: formValue(formData, "brand"),
     dueDate: formValue(formData, "dueDate"),
@@ -788,7 +944,11 @@ export async function createTaskAction(formData: FormData): Promise<TaskRow> {
   });
 
   const supabase = createSupabaseAdminClient();
-  const [brandId, outletId] = await Promise.all([findBrandIdByName(supabase, input.brand), findOutletIdByName(supabase, input.outlet)]);
+  const [brandId, outletId, assignedToId] = await Promise.all([
+    findBrandIdByName(supabase, input.brand),
+    findOutletIdByName(supabase, input.outlet),
+    findUserIdByName(supabase, input.assignedTo)
+  ]);
 
   const { data, error } = await supabase
     .from("tasks")
@@ -796,6 +956,7 @@ export async function createTaskAction(formData: FormData): Promise<TaskRow> {
       title: input.title,
       description: input.description,
       task_type: input.taskType,
+      assigned_to: assignedToId,
       outlet_id: outletId,
       brand_id: brandId,
       due_date: input.dueDate || null,
@@ -812,6 +973,7 @@ export async function createTaskAction(formData: FormData): Promise<TaskRow> {
     title: data.title,
     description: data.description ?? "Created from verified sales or retailer signal.",
     taskType: data.task_type,
+    assignedTo: input.assignedTo || "Unassigned",
     outlet: input.outlet || "Unassigned",
     brand: input.brand || "Unassigned",
     dueDate: data.due_date ?? "No due date",
@@ -826,6 +988,7 @@ export async function updateTaskAction(formData: FormData): Promise<TaskRow> {
     title: formValue(formData, "title"),
     description: formValue(formData, "description"),
     taskType: formValue(formData, "taskType"),
+    assignedTo: formValue(formData, "assignedTo"),
     outlet: formValue(formData, "outlet"),
     brand: formValue(formData, "brand"),
     dueDate: formValue(formData, "dueDate"),
@@ -834,7 +997,11 @@ export async function updateTaskAction(formData: FormData): Promise<TaskRow> {
   });
 
   const supabase = createSupabaseAdminClient();
-  const [brandId, outletId] = await Promise.all([findBrandIdByName(supabase, input.brand), findOutletIdByName(supabase, input.outlet)]);
+  const [brandId, outletId, assignedToId] = await Promise.all([
+    findBrandIdByName(supabase, input.brand),
+    findOutletIdByName(supabase, input.outlet),
+    findUserIdByName(supabase, input.assignedTo)
+  ]);
 
   const { data, error } = await supabase
     .from("tasks")
@@ -842,6 +1009,7 @@ export async function updateTaskAction(formData: FormData): Promise<TaskRow> {
       title: input.title,
       description: input.description,
       task_type: input.taskType,
+      assigned_to: assignedToId,
       outlet_id: outletId,
       brand_id: brandId,
       due_date: input.dueDate || null,
@@ -860,6 +1028,7 @@ export async function updateTaskAction(formData: FormData): Promise<TaskRow> {
     title: data.title,
     description: data.description ?? "Created from verified sales or retailer signal.",
     taskType: data.task_type,
+    assignedTo: input.assignedTo || "Unassigned",
     outlet: input.outlet || "Unassigned",
     brand: input.brand || "Unassigned",
     dueDate: data.due_date ?? "No due date",

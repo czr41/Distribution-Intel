@@ -28,6 +28,8 @@ export type OutletRow = {
   city: string;
   channel: string;
   brand: string;
+  territory: string;
+  assignedSalesman: string;
   status: "Active" | "Prospect" | "Inactive";
   owner: string;
   phone: string;
@@ -60,6 +62,7 @@ export type TaskRow = {
   title: string;
   description: string;
   taskType: string;
+  assignedTo: string;
   outlet: string;
   brand: string;
   dueDate: string;
@@ -73,6 +76,17 @@ export type TerritoryRow = {
   city: string;
   state: string;
   region: string;
+  status: "Active" | "Inactive";
+};
+
+export type SkuRow = {
+  id: string;
+  name: string;
+  code: string;
+  brand: string;
+  category: string;
+  unit: string;
+  mrp: number;
   status: "Active" | "Inactive";
 };
 
@@ -178,6 +192,7 @@ export type CommandCenterData = {
   brands: BrandOption[];
   outlets: OutletRow[];
   salesmen: SalesmanRow[];
+  skus: SkuRow[];
   tasks: TaskRow[];
   territories: TerritoryRow[];
   payments: PaymentRow[];

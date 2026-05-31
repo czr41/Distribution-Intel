@@ -12,6 +12,7 @@ import type {
   OutletRow,
   PaymentRow,
   SalesmanRow,
+  SkuRow,
   TaskRow,
   TerritoryRow,
   VerificationDraftRecord
@@ -30,6 +31,12 @@ type OutletResult = {
   channel_type: string | null;
   status: string | null;
   outlet_brands?: OutletBrandJoin[] | null;
+  territories?: { name?: string | null } | { name?: string | null }[] | null;
+  field_executives?: {
+    users?: { name?: string | null } | { name?: string | null }[] | null;
+  } | {
+    users?: { name?: string | null } | { name?: string | null }[] | null;
+  }[] | null;
 };
 
 type SalesmanResult = {
@@ -59,6 +66,7 @@ type TaskResult = {
   status: string | null;
   outlets?: { name?: string | null } | { name?: string | null }[] | null;
   brands?: { name?: string | null } | { name?: string | null }[] | null;
+  users?: { name?: string | null } | { name?: string | null }[] | null;
 };
 
 type TerritoryResult = {
@@ -68,6 +76,17 @@ type TerritoryResult = {
   state: string;
   region: string | null;
   status: string | null;
+};
+
+type SkuResult = {
+  id: string;
+  name: string;
+  code: string | null;
+  category: string | null;
+  unit: string | null;
+  mrp: number | string | null;
+  status: string | null;
+  brands?: { name?: string | null } | { name?: string | null }[] | null;
 };
 
 type PaymentResult = {
@@ -303,6 +322,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     salesmenResult,
     tasksResult,
     territoriesResult,
+    skusResult,
     paymentsResult,
     ordersResult,
     billsResult,
@@ -314,7 +334,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     supabase.from("users").select("id,name,email,phone,role,status").order("created_at", { ascending: false }),
     supabase
       .from("outlets")
-      .select("id,name,owner_name,phone,city,channel_type,status,outlet_brands(brands(name))")
+      .select("id,name,owner_name,phone,city,channel_type,status,outlet_brands(brands(name)),territories(name),field_executives(users!field_executives_user_id_fkey(name))")
       .order("created_at", { ascending: false }),
     supabase
       .from("field_executives")
@@ -322,9 +342,10 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       .order("created_at", { ascending: false }),
     supabase
       .from("tasks")
-      .select("id,title,description,task_type,due_date,priority,status,outlets(name),brands(name)")
+      .select("id,title,description,task_type,due_date,priority,status,outlets(name),brands(name),users(name)")
       .order("created_at", { ascending: false }),
     supabase.from("territories").select("id,name,city,state,region,status").order("created_at", { ascending: false }),
+    supabase.from("skus").select("id,name,code,category,unit,mrp,status,brands(name)").order("name", { ascending: true }),
     supabase
       .from("payments")
       .select("id,amount_due,amount_collected,due_date,promised_payment_date,payment_mode,status,risk_level,outlets(name),brands(name)")
@@ -362,6 +383,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   if (salesmenResult.error) throw new Error(salesmenResult.error.message);
   if (tasksResult.error) throw new Error(tasksResult.error.message);
   if (territoriesResult.error) throw new Error(territoriesResult.error.message);
+  if (skusResult.error) throw new Error(skusResult.error.message);
   if (paymentsResult.error) throw new Error(paymentsResult.error.message);
   if (ordersResult.error) throw new Error(ordersResult.error.message);
   if (billsResult.error) throw new Error(billsResult.error.message);
@@ -391,6 +413,9 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   const outlets: OutletRow[] = ((outletsResult.data ?? []) as OutletResult[]).map((outlet) => {
     const linkedBrand = Array.isArray(outlet.outlet_brands) ? outlet.outlet_brands[0]?.brands : undefined;
     const brandName = Array.isArray(linkedBrand) ? linkedBrand[0]?.name : linkedBrand?.name;
+    const territory = Array.isArray(outlet.territories) ? outlet.territories[0] : outlet.territories;
+    const executive = Array.isArray(outlet.field_executives) ? outlet.field_executives[0] : outlet.field_executives;
+    const executiveUser = Array.isArray(executive?.users) ? executive?.users[0] : executive?.users;
 
     return {
       id: outlet.id,
@@ -398,6 +423,8 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       city: outlet.city,
       channel: outlet.channel_type ?? "Unassigned",
       brand: brandName ?? "Unassigned",
+      territory: territory?.name ?? "Unassigned",
+      assignedSalesman: executiveUser?.name ?? "Unassigned",
       status: displayStatus(outlet.status),
       owner: outlet.owner_name ?? "",
       phone: outlet.phone ?? ""
@@ -437,12 +464,14 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   const tasks: TaskRow[] = ((tasksResult.data ?? []) as TaskResult[]).map((task) => {
     const outlet = Array.isArray(task.outlets) ? task.outlets[0] : task.outlets;
     const brand = Array.isArray(task.brands) ? task.brands[0] : task.brands;
+    const assignedUser = Array.isArray(task.users) ? task.users[0] : task.users;
 
     return {
       id: task.id,
       title: task.title,
       description: task.description ?? "Created from verified sales or retailer signal.",
       taskType: task.task_type,
+      assignedTo: assignedUser?.name ?? "Unassigned",
       outlet: outlet?.name ?? "Unassigned",
       brand: brand?.name ?? "Unassigned",
       dueDate: task.due_date ?? "No due date",
@@ -459,6 +488,21 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     region: territory.region ?? "Unassigned",
     status: displayBrandStatus(territory.status)
   }));
+
+  const skus: SkuRow[] = ((skusResult.data ?? []) as SkuResult[]).map((sku) => {
+    const brand = Array.isArray(sku.brands) ? sku.brands[0] : sku.brands;
+
+    return {
+      id: sku.id,
+      name: sku.name,
+      code: sku.code ?? "",
+      brand: brand?.name ?? "Unassigned",
+      category: sku.category ?? "Uncategorized",
+      unit: sku.unit ?? "Unit",
+      mrp: numberValue(sku.mrp),
+      status: displayBrandStatus(sku.status)
+    };
+  });
 
   const payments: PaymentRow[] = ((paymentsResult.data ?? []) as PaymentResult[]).map((payment) => {
     const outlet = Array.isArray(payment.outlets) ? payment.outlets[0] : payment.outlets;
@@ -598,5 +642,5 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     updatedAt: typeof openAIConfig.updatedAt === "string" && openAIConfig.updatedAt ? openAIConfig.updatedAt : openAIDefaults.updatedAt
   };
 
-  return { records, users, brands, outlets, salesmen, tasks, territories, payments, orders, bills, verificationDrafts, metaIntegration, aiProvider, openAIIntegration };
+  return { records, users, brands, outlets, salesmen, skus, tasks, territories, payments, orders, bills, verificationDrafts, metaIntegration, aiProvider, openAIIntegration };
 }
