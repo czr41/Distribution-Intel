@@ -44,7 +44,15 @@ export type SalesmanRow = {
   status: "Active" | "Inactive";
 };
 
-export type AppUserRole = "super_admin" | "operations_manager" | "admin_operator" | "field_executive" | "brand_partner_viewer" | "brand_partner_manager";
+export type AppUserRole =
+  | "super_admin"
+  | "operations_manager"
+  | "admin_operator"
+  | "field_executive"
+  | "brand_partner_viewer"
+  | "brand_partner_manager"
+  | "finance_collections"
+  | "integration_user";
 
 export type AppUserRow = {
   id: string;

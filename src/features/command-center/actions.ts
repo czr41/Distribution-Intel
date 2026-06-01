@@ -44,14 +44,16 @@ const userRoleMap = {
   "Admin Operator": "admin_operator",
   "Sales Executive": "field_executive",
   "Brand Viewer": "brand_partner_viewer",
-  "Brand Manager": "brand_partner_manager"
+  "Brand Manager": "brand_partner_manager",
+  "Finance": "finance_collections",
+  "Integration": "integration_user"
 } as const;
 
 const userSchema = z.object({
   name: z.string().min(1),
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().min(1),
-  role: z.enum(["Admin", "Manager", "Admin Operator", "Sales Executive", "Brand Viewer", "Brand Manager"]),
+  role: z.enum(["Admin", "Manager", "Admin Operator", "Sales Executive", "Brand Viewer", "Brand Manager", "Finance", "Integration"]),
   territory: z.string().optional(),
   status: z.enum(["Active", "Inactive"])
 });
@@ -283,7 +285,9 @@ function roleLabel(role: AppUserRow["role"]) {
     admin_operator: "Admin Operator",
     field_executive: "Sales Executive",
     brand_partner_viewer: "Brand Viewer",
-    brand_partner_manager: "Brand Manager"
+    brand_partner_manager: "Brand Manager",
+    finance_collections: "Finance",
+    integration_user: "Integration"
   };
   return labels[role] ?? role;
 }

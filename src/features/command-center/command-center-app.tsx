@@ -21,7 +21,7 @@ import type {
   VerificationDraftRecord
 } from "./types";
 
-type View = "command" | "inbox" | "verification" | "media" | "outlets" | "products" | "tasks" | "payments" | "orders" | "bills" | "territories" | "reports" | "partners" | "ops" | "users" | "integrations";
+type View = "command" | "inbox" | "verification" | "media" | "outlets" | "products" | "tasks" | "payments" | "orders" | "bills" | "territories" | "finance" | "reports" | "partners" | "ops" | "users" | "crm-sync" | "integrations";
 type MediaLabResult = {
   fileName: string;
   fileType: string;
@@ -118,10 +118,12 @@ const viewTitles: Record<View, string> = {
   orders: "Orders",
   bills: "Bills",
   territories: "Territories",
+  finance: "Finance / Collections",
   reports: "Reports",
   partners: "Brand Partner Dashboard",
   ops: "Sales App & Team",
   users: "User Management",
+  "crm-sync": "CRM / ERP Sync",
   integrations: "Integrations"
 };
 
@@ -241,6 +243,8 @@ function normalizeHeader(value: string) {
 
 function userAccessKind(user: AppUserRow) {
   if (user.role === "field_executive") return "sales";
+  if (user.role === "finance_collections") return "finance";
+  if (user.role === "integration_user") return "integration";
   if (user.role === "operations_manager") return "manager";
   if (user.role === "super_admin" || user.role === "admin_operator") return "admin";
   return "partner";
@@ -250,6 +254,8 @@ function canSeeView(user: AppUserRow, view: View) {
   const accessKind = userAccessKind(user);
   if (accessKind === "admin") return true;
   if (accessKind === "manager") return !["users", "integrations", "verification"].includes(view);
+  if (accessKind === "finance") return ["finance", "payments", "tasks", "reports"].includes(view);
+  if (accessKind === "integration") return ["crm-sync", "reports"].includes(view);
   if (accessKind === "partner") return ["partners", "reports"].includes(view);
   return ["ops", "outlets", "tasks", "orders", "payments", "media"].includes(view);
 }
@@ -304,7 +310,9 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       Admin: ["super_admin", "admin_operator"],
       Manager: ["operations_manager"],
       "Sales Executive": ["field_executive"],
-      "Brand Partner": ["brand_partner_viewer", "brand_partner_manager"]
+      "Brand Partner": ["brand_partner_viewer", "brand_partner_manager"],
+      Finance: ["finance_collections"],
+      Integration: ["integration_user"]
     };
 
     const hasAdminUser = users.some((user) => user.role === "super_admin" || user.role === "admin_operator");
@@ -333,7 +341,8 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     if (matched) {
       setLoginError("");
       setCurrentUser(matched);
-      const firstView = userAccessKind(matched) === "sales" ? "ops" : "command";
+      const kind = userAccessKind(matched);
+      const firstView = kind === "sales" ? "ops" : kind === "finance" ? "finance" : kind === "integration" ? "crm-sync" : "command";
       setActiveView(canSeeView(matched, firstView) ? firstView : "partners");
     } else {
       setLoginError("Login failed. Check role, identifier, and access code.");
@@ -916,6 +925,11 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Add Territory", action: () => openCreate("territory") },
       { label: "Bulk Import", action: () => openBulkImport("territory") }
     ],
+    finance: [
+      { label: "Add Payment", action: () => openCreate("payment") },
+      { label: "Create Follow-Up", action: () => openCreate("task") },
+      { label: "Bulk Import", action: () => openBulkImport("payment") }
+    ],
     reports: [{ label: "Generate Report", action: () => setActiveView("reports") }],
     partners: [
       { label: "Add Client", action: () => openCreate("brand") },
@@ -930,6 +944,10 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Add User", action: () => openCreate("user") },
       { label: "Bulk Import", action: () => openBulkImport("user") }
     ],
+    "crm-sync": [
+      { label: "Configure Providers", action: () => setActiveView("integrations") },
+      { label: "Reports", action: () => setActiveView("reports") }
+    ],
     integrations: [{ label: "Copy Webhook Path", action: () => navigator.clipboard?.writeText(metaIntegration.webhookUrl) }]
   };
 
@@ -943,7 +961,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         <nav className="nav-tabs" aria-label="Views">
           {visibleViews.map((view) => (
             <button key={view} className={`nav-tab ${activeView === view ? "active" : ""}`} onClick={() => setActiveView(view)}>
-              <span>{view === "ops" ? "Sales App" : view === "inbox" ? "Retailer WhatsApp" : view === "users" ? "Users" : view === "products" ? "Products / SKUs" : view[0].toUpperCase() + view.slice(1)}</span>
+              <span>{view === "ops" ? "Sales App" : view === "inbox" ? "Retailer WhatsApp" : view === "users" ? "Users" : view === "products" ? "Products / SKUs" : view === "crm-sync" ? "CRM Sync" : view[0].toUpperCase() + view.slice(1)}</span>
             </button>
           ))}
         </nav>
@@ -1052,10 +1070,12 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         {activeView === "users" && <UsersView users={users} onAdd={() => openCreate("user")} onEdit={(user) => openEdit({ type: "user", record: user })} onBulkImport={() => openBulkImport("user")} />}
         {activeView === "tasks" && <TasksView tasks={tasks} onAdd={() => openCreate("task")} onEdit={(task) => openEdit({ type: "task", record: task })} onBulkImport={() => openBulkImport("task")} />}
         {activeView === "territories" && <TerritoriesView territories={territories} onAdd={() => openCreate("territory")} onEdit={(territory) => openEdit({ type: "territory", record: territory })} onBulkImport={() => openBulkImport("territory")} />}
+        {activeView === "finance" && <FinanceView payments={payments} tasks={tasks} outlets={outlets} salesmen={salesmen} onAddPayment={() => openCreate("payment")} onCreateTask={() => openCreate("task")} onBulkImport={() => openBulkImport("payment")} />}
         {activeView === "payments" && <PaymentsView payments={payments} onAdd={() => openCreate("payment")} onEdit={(payment) => openEdit({ type: "payment", record: payment })} onBulkImport={() => openBulkImport("payment")} />}
         {activeView === "orders" && <OrdersView orders={orders} onAdd={() => openCreate("order")} onEdit={(order) => openEdit({ type: "order", record: order })} onBulkImport={() => openBulkImport("order")} />}
         {activeView === "bills" && <BillsView bills={bills} onAdd={() => openCreate("bill")} onEdit={(bill) => openEdit({ type: "bill", record: bill })} onBulkImport={() => openBulkImport("bill")} />}
         {activeView === "reports" && <ReportsView />}
+        {activeView === "crm-sync" && <CRMSyncView brands={brands} outlets={outlets} skus={skus} payments={payments} orders={orders} metaIntegration={metaIntegration} aiProvider={aiProvider} />}
         {activeView === "integrations" && (
           <IntegrationsView
             metaIntegration={metaIntegration}
@@ -1520,6 +1540,8 @@ function LoginScreen({ users, error, onLogin }: { users: AppUserRow[]; error: st
   const demoAdmin = users.find((user) => user.role === "super_admin" || user.role === "admin_operator");
   const demoManager = users.find((user) => user.role === "operations_manager");
   const demoSales = users.find((user) => user.role === "field_executive");
+  const demoFinance = users.find((user) => user.role === "finance_collections");
+  const demoIntegration = users.find((user) => user.role === "integration_user");
   const hasAdminUser = Boolean(demoAdmin);
 
   return (
@@ -1530,7 +1552,7 @@ function LoginScreen({ users, error, onLogin }: { users: AppUserRow[]; error: st
         <h1>Choose your workspace</h1>
         <p>Admins manage everything. Managers supervise teams and territories. Sales executives enter the sales app.</p>
         <form className="master-form" onSubmit={onLogin}>
-          <Select name="role" label="Login as" options={["Admin", "Manager", "Sales Executive", "Brand Partner"]} defaultValue="Admin" />
+          <Select name="role" label="Login as" options={["Admin", "Manager", "Sales Executive", "Brand Partner", "Finance", "Integration"]} defaultValue="Admin" />
           <Input name="identifier" label="Email, phone, or name" placeholder="admin@shipd2r.local" />
           <Input name="accessCode" label="Access code" placeholder="Last 4 digits of phone" type="password" />
           {error && <p className="form-error">{error}</p>}
@@ -1542,6 +1564,8 @@ function LoginScreen({ users, error, onLogin }: { users: AppUserRow[]; error: st
           {demoAdmin && <span>Admin example: {demoAdmin.email || demoAdmin.phone} / {loginCodeFor(demoAdmin)}</span>}
           {demoManager && <span>Manager example: {demoManager.email || demoManager.phone} / {loginCodeFor(demoManager)}</span>}
           {demoSales && <span>Sales example: {demoSales.email || demoSales.phone} / {loginCodeFor(demoSales)}</span>}
+          {demoFinance && <span>Finance example: {demoFinance.email || demoFinance.phone} / {loginCodeFor(demoFinance)}</span>}
+          {demoIntegration && <span>Integration example: {demoIntegration.email || demoIntegration.phone} / {loginCodeFor(demoIntegration)}</span>}
           {!hasAdminUser && <span>Bootstrap admin: any email / 0000</span>}
         </div>
       </section>
@@ -2497,6 +2521,119 @@ function BillsView({ bills, onAdd, onEdit, onBulkImport }: { bills: BillRow[]; o
   );
 }
 
+function FinanceView({
+  payments,
+  tasks,
+  outlets,
+  salesmen,
+  onAddPayment,
+  onCreateTask,
+  onBulkImport
+}: {
+  payments: PaymentRow[];
+  tasks: TaskRow[];
+  outlets: OutletRow[];
+  salesmen: SalesmanRow[];
+  onAddPayment: () => void;
+  onCreateTask: () => void;
+  onBulkImport: () => void;
+}) {
+  const totalDue = payments.reduce((total, payment) => total + payment.amountDue, 0);
+  const totalCollected = payments.reduce((total, payment) => total + payment.amountCollected, 0);
+  const outstanding = payments.reduce((total, payment) => total + Math.max(payment.amountDue - payment.amountCollected, 0), 0);
+  const overdue = payments.filter((payment) => payment.status === "Overdue" || payment.riskLevel === "High" || payment.riskLevel === "Critical");
+  const promises = payments.filter((payment) => payment.promisedPaymentDate && payment.promisedPaymentDate !== "No promise");
+  const paymentTasks = tasks.filter((task) => task.taskType.toLowerCase().includes("payment") || task.title.toLowerCase().includes("payment"));
+  const outletByName = new Map(outlets.map((outlet) => [outlet.name, outlet]));
+
+  const collectionByRep = salesmen.map((person) => {
+    const repOutlets = outlets.filter((outlet) => outlet.assignedSalesman === person.name).map((outlet) => outlet.name);
+    const repPayments = payments.filter((payment) => repOutlets.includes(payment.outlet));
+    const collected = repPayments.reduce((total, payment) => total + payment.amountCollected, 0);
+    const pending = repPayments.reduce((total, payment) => total + Math.max(payment.amountDue - payment.amountCollected, 0), 0);
+    return { name: person.name, collected, pending };
+  }).filter((person) => person.collected || person.pending);
+
+  return (
+    <section className="distribution-dashboard">
+      <section className="metrics-grid">
+        <Metric label="Total receivables" value={money(totalDue)} detail={`${payments.length} payment records`} />
+        <Metric label="Collected" value={money(totalCollected)} detail="Updated in CRM" />
+        <Metric label="Outstanding" value={money(outstanding)} detail={`${overdue.length} high-risk accounts`} />
+        <Metric label="Promise-to-pay" value={promises.length} detail="Retailer commitments tracked" />
+      </section>
+
+      <section className="admin-command-grid">
+        <article className="panel command-actions-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Collections Actions</h2>
+              <p>Record collections, create follow-ups, and import receivable updates.</p>
+            </div>
+          </div>
+          <div className="admin-action-grid">
+            <button className="primary-button" onClick={onAddPayment}>Add Payment</button>
+            <button className="secondary-button" onClick={onCreateTask}>Create Follow-Up</button>
+            <button className="secondary-button" onClick={onBulkImport}>Bulk Import Payments</button>
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>High-Risk Accounts</h2>
+          <div className="task-list compact-list">
+            {overdue.slice(0, 6).map((payment) => (
+              <article className="task-row compact-row" key={payment.id}>
+                <div className="queue-top">
+                  <strong>{payment.outlet}</strong>
+                  <span className="tag warn">{payment.riskLevel}</span>
+                </div>
+                <p>{payment.brand} - {money(Math.max(payment.amountDue - payment.amountCollected, 0))} pending</p>
+                <div className="record-meta">
+                  <span>{outletByName.get(payment.outlet)?.city ?? "No city"}</span>
+                  <span>{payment.status}</span>
+                </div>
+              </article>
+            ))}
+            {!overdue.length && <p className="empty-state">No overdue or high-risk accounts.</p>}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Collection By Sales Rep</h2>
+          <div className="signal-list">
+            {collectionByRep.slice(0, 6).map((person) => (
+              <article className="signal-row" key={person.name}>
+                <div>
+                  <strong>{person.name}</strong>
+                  <span>{money(person.collected)} collected</span>
+                </div>
+                <span className="tag warn">{money(person.pending)} pending</span>
+              </article>
+            ))}
+            {!collectionByRep.length && <p className="empty-state">Assign outlets to sales reps to see collection ownership.</p>}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Payment Follow-Ups</h2>
+          <div className="task-list compact-list">
+            {paymentTasks.slice(0, 6).map((task) => (
+              <article className="task-row compact-row" key={task.id}>
+                <div className="queue-top">
+                  <strong>{task.title}</strong>
+                  <span className="tag blue">{task.status}</span>
+                </div>
+                <p>{task.assignedTo} - due {task.dueDate}</p>
+              </article>
+            ))}
+            {!paymentTasks.length && <p className="empty-state">No finance follow-up tasks yet.</p>}
+          </div>
+        </article>
+      </section>
+    </section>
+  );
+}
+
 function CrudPanel({
   title,
   description,
@@ -2552,6 +2689,86 @@ function ReportsView() {
           <article className="module-card"><h3>Exports</h3><p>PDF, CSV, and Excel-ready verified datasets.</p></article>
         </div>
       </article>
+    </section>
+  );
+}
+
+function CRMSyncView({
+  brands,
+  outlets,
+  skus,
+  payments,
+  orders,
+  metaIntegration,
+  aiProvider
+}: {
+  brands: BrandOption[];
+  outlets: OutletRow[];
+  skus: SkuRow[];
+  payments: PaymentRow[];
+  orders: OrderRow[];
+  metaIntegration: MetaIntegrationSettings;
+  aiProvider: AIProviderSettings;
+}) {
+  const syncEvents = [
+    { object: "Outlet master", records: outlets.length, mode: "CSV export / webhook-ready", status: "Native CRM" },
+    { object: "SKU master", records: skus.length, mode: "Brand catalogue sync", status: "Mapped by brand" },
+    { object: "Order intents", records: orders.length, mode: "Webhook push later", status: "Verification gated" },
+    { object: "Payment status", records: payments.length, mode: "Finance export", status: "Review required" }
+  ];
+  const availableIntegrations = ["Zoho CRM", "Salesforce", "HubSpot", "Odoo", "SAP Business One", "Microsoft Dynamics", "LeadSquared", "Custom API"];
+
+  return (
+    <section className="distribution-dashboard">
+      <section className="command-hero panel">
+        <div>
+          <p className="eyebrow">Enterprise integration layer</p>
+          <h2>CRM-ready distribution intelligence</h2>
+          <p>Start with CSV, PDF, and Google Sheets-style exports, then move verified records into brand CRM/ERP systems through mapped webhooks and API connectors.</p>
+        </div>
+        <div className="command-hero-grid">
+          <Field label="Brand accounts" value={String(brands.length)} />
+          <Field label="Meta WhatsApp" value={metaIntegration.status} />
+          <Field label="AI provider" value={aiProvider.status} />
+          <Field label="Sync objects" value={String(syncEvents.length)} />
+        </div>
+      </section>
+
+      <section className="admin-command-grid">
+        <article className="panel">
+          <h2>Sync Objects</h2>
+          <div className="signal-list">
+            {syncEvents.map((event) => (
+              <article className="signal-row" key={event.object}>
+                <div>
+                  <strong>{event.object}</strong>
+                  <span>{event.mode}</span>
+                </div>
+                <span className="tag blue">{event.records} records</span>
+              </article>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Connector Roadmap</h2>
+          <div className="template-columns">
+            {availableIntegrations.map((integration) => (
+              <span className="tag" key={integration}>{integration}</span>
+            ))}
+          </div>
+          <p className="manager-note">MVP support is export-first. Native two-way sync, field mapping, duplicate handling, retries, and error logs remain pilot-phase work.</p>
+        </article>
+
+        <article className="panel wide-panel">
+          <h2>Integration Controls To Add</h2>
+          <div className="module-list">
+            <article className="module-card"><h3>Field Mapping</h3><p>Map ShipD2R outlets, SKUs, orders, payments, and complaints to each brand CRM schema.</p></article>
+            <article className="module-card"><h3>Approval Before Sync</h3><p>Push verified data only, with manager approval for sensitive records.</p></article>
+            <article className="module-card"><h3>Error Logs</h3><p>Track failed pushes, duplicate conflicts, retry attempts, and provider responses.</p></article>
+          </div>
+        </article>
+      </section>
     </section>
   );
 }
@@ -2849,7 +3066,7 @@ function MasterDataModal({
                 <Input name="name" label="Full name" defaultValue={userValues?.name} />
                 <Input name="email" label="Login email" type="email" required={false} defaultValue={userValues?.email} />
                 <Input name="phone" label="Phone / login code source" defaultValue={userValues?.phone} />
-                <Select name="role" label="Login role" options={["Admin", "Manager", "Admin Operator", "Sales Executive", "Brand Viewer", "Brand Manager"]} defaultValue={userValues?.roleLabel} />
+                <Select name="role" label="Login role" options={["Admin", "Manager", "Admin Operator", "Sales Executive", "Brand Viewer", "Brand Manager", "Finance", "Integration"]} defaultValue={userValues?.roleLabel} />
                 <Input name="territory" label="Territory / team" required={false} defaultValue={userValues?.territory === "Managed in Sales App & Team" ? "" : userValues?.territory} />
                 <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={userValues?.status} />
               </>

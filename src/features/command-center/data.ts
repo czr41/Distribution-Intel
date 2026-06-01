@@ -254,7 +254,9 @@ function roleLabel(role: AppUserRow["role"]) {
     admin_operator: "Admin Operator",
     field_executive: "Sales Executive",
     brand_partner_viewer: "Brand Viewer",
-    brand_partner_manager: "Brand Manager"
+    brand_partner_manager: "Brand Manager",
+    finance_collections: "Finance",
+    integration_user: "Integration"
   };
   return labels[role] ?? role;
 }
