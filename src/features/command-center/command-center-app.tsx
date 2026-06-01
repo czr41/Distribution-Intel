@@ -107,24 +107,24 @@ function withSelectedOption(options: string[], selected: string) {
 }
 
 const viewTitles: Record<View, string> = {
-  command: "ERP / CRM Command Center",
-  inbox: "Retailer WhatsApp",
-  verification: "Verification Queue",
-  media: "Media Extraction Lab",
+  command: "Operating Command Center",
+  inbox: "Retailer Message Intake",
+  verification: "Review Queue",
+  media: "Evidence Extraction Studio",
   outlets: "Outlet Master",
-  products: "Products / SKUs",
-  tasks: "Tasks",
-  payments: "Payments",
-  orders: "Orders",
-  bills: "Bills",
-  territories: "Territories",
-  finance: "Finance / Collections",
-  reports: "Reports",
-  partners: "Brand Partner Dashboard",
-  ops: "Sales App & Team",
-  users: "User Management",
-  "crm-sync": "CRM / ERP Sync",
-  integrations: "Integrations"
+  products: "Product Catalog",
+  tasks: "Task Control",
+  payments: "Payment Control",
+  orders: "Order Pipeline",
+  bills: "Bill Register",
+  territories: "Territory Master",
+  finance: "Collections Control",
+  reports: "Executive Reports",
+  partners: "Client Partner View",
+  ops: "Field Sales Workspace",
+  users: "Access Management",
+  "crm-sync": "CRM and ERP Sync",
+  integrations: "Platform Integrations"
 };
 
 const bulkTemplates: Record<BulkImportType, { title: string; filename: string; columns: string[]; sample: string[] }> = {
@@ -996,7 +996,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
 
         <header className="topbar">
           <div>
-            <p className="eyebrow">Shipd2r central ERP / CRM</p>
+            <p className="eyebrow">ShipD2R operating platform</p>
             <h1>{viewTitles[activeView]}</h1>
             <p className="session-line">{currentUser.name} - {currentUser.roleLabel}</p>
           </div>
@@ -1233,8 +1233,8 @@ function AdminDistributionDashboard({
       <section className="command-hero panel">
         <div>
           <p className="eyebrow">Distribution control room</p>
-          <h2>Market execution at a glance</h2>
-          <p>Track field coverage, brand movement, orders, collections, tasks, and data quality from one operating dashboard.</p>
+          <h2>Execution visibility in one place</h2>
+          <p>Monitor field coverage, client movement, order value, collections, tasks, and data quality from a single operating view.</p>
         </div>
         <div className="command-hero-grid">
           <Field label="Active clients" value={String(brands.filter((brand) => brand.status === "Active").length)} />
@@ -1278,8 +1278,8 @@ function AdminDistributionDashboard({
         <article className="panel command-actions-panel">
           <div className="panel-heading">
             <div>
-              <h2>Admin Actions</h2>
-              <p>Fast controls for the master data and daily operating loop.</p>
+              <h2>Control Actions</h2>
+              <p>Focused controls for master data, field execution, reviews, and reporting.</p>
             </div>
           </div>
           <div className="admin-action-grid">
@@ -1311,8 +1311,8 @@ function AdminDistributionDashboard({
         <article className="panel wide-panel">
           <div className="panel-heading">
             <div>
-              <h2>Brand And SKU Movement</h2>
-              <p>Client-wise value, outlet spread, and product readiness.</p>
+              <h2>Client and SKU Movement</h2>
+              <p>Client-wise value, outlet reach, and product readiness.</p>
             </div>
           </div>
           <div className="brand-movement-grid">
@@ -2230,7 +2230,7 @@ function OutletsView({ outlets, onAdd, onEdit, onBulkImport }: { outlets: Outlet
 
 function ProductsView({ skus, onAdd, onEdit, onBulkImport }: { skus: SkuRow[]; onAdd: () => void; onEdit: (sku: SkuRow) => void; onBulkImport: () => void }) {
   return (
-    <CrudPanel title="Products / SKUs" description="Marketplace-style catalogue for retailer order capture, price checks, pack sizes, and SKU movement." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Product">
+    <CrudPanel title="Product Catalog" description="A compact SKU catalog for order capture, price checks, pack details, and client movement." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Product">
       <div className="product-market-grid">
         {skus.map((sku) => (
           <article className="product-card" key={sku.id}>
