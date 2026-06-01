@@ -981,23 +981,29 @@ textarea {
   border-radius: 8px;
   background: #ffffff;
   overflow: hidden;
-  display: grid;
-  grid-template-rows: 36% 64%;
+  display: flex;
+  flex-direction: column;
   aspect-ratio: 1 / 1;
   min-height: 0;
 }
 
 .product-media {
+  flex: 0 0 36%;
   background: linear-gradient(180deg, #f8faf7, #eef6f3);
   display: grid;
   place-items: center;
   padding: 9px;
   min-height: 0;
+  max-height: 36%;
+  overflow: hidden;
 }
 
 .product-media img {
-  width: 100%;
-  height: 100%;
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
   object-fit: contain;
 }
 
@@ -1015,12 +1021,17 @@ textarea {
 }
 
 .product-card-body {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 5px;
   padding: 10px 12px 11px;
   align-content: start;
   min-height: 0;
+  overflow: hidden;
+  background: #ffffff;
+  position: relative;
+  z-index: 1;
 }
 
 .product-card-body h3 {
@@ -1066,6 +1077,7 @@ textarea {
 
 .product-card .queue-top {
   gap: 6px;
+  flex-wrap: nowrap;
 }
 
 .product-card .tag {
@@ -1077,10 +1089,25 @@ textarea {
   font-size: 11px;
 }
 
+.product-card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .product-card .record-meta {
   gap: 5px;
   font-size: 10.5px;
   line-height: 1.2;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.product-card .record-meta span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bar {

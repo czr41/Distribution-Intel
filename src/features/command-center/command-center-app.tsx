@@ -2244,7 +2244,10 @@ function ProductsView({ skus, onAdd, onEdit, onBulkImport }: { skus: SkuRow[]; o
             <div className="product-card-body">
               <div className="queue-top">
                 <span className="tag blue">{sku.brand}</span>
-                <button className="link-button" onClick={() => onEdit(sku)}>Edit</button>
+                <div className="product-card-actions">
+                  <button className="link-button" onClick={() => onEdit(sku)}>Picture</button>
+                  <button className="link-button" onClick={() => onEdit(sku)}>Edit</button>
+                </div>
               </div>
               <h3>{sku.name}</h3>
               <p>{sku.category}</p>
@@ -3095,7 +3098,7 @@ function MasterDataModal({
                 <Input name="category" label="Category" required={false} defaultValue={skuValues?.category === "Uncategorized" ? "" : skuValues?.category} />
                 <Input name="unit" label="Unit / pack size" required={false} defaultValue={skuValues?.unit === "Unit" ? "" : skuValues?.unit} />
                 <Input name="mrp" label="MRP" type="number" required={false} defaultValue={skuValues?.mrp ? String(skuValues.mrp) : undefined} />
-                <Input name="imageUrl" label="Product picture URL" type="url" required={false} defaultValue={skuValues?.imageUrl} />
+                <Input name="imageUrl" label="Product picture URL / update image" type="url" required={false} defaultValue={skuValues?.imageUrl} />
                 <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={skuValues?.status} />
               </>
             )}
