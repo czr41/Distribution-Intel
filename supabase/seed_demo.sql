@@ -91,17 +91,17 @@ join brands b on b.name = 'Nestle'
 where o.name in ('Fresh Basket', 'Metro Mini Mart', 'Raj Stores')
 on conflict (outlet_id, brand_id) do nothing;
 
-insert into skus (brand_id, name, code, category, unit, mrp, status)
-select b.id, seed.name, seed.code, seed.category, seed.unit, seed.mrp, 'active'
+insert into skus (brand_id, name, code, category, unit, mrp, image_url, status)
+select b.id, seed.name, seed.code, seed.category, seed.unit, seed.mrp, seed.image_url, 'active'
 from brands b
 cross join (
   values
-    ('Maggi 2-Minute Masala Noodles 70g', 'NES-MAGGI-70', 'Instant noodles', '70g pack', 15),
-    ('Nescafe Classic Instant Coffee 24g', 'NES-NESCAFE-24', 'Coffee', '24g jar', 115),
-    ('KitKat 4 Finger Chocolate 37.3g', 'NES-KITKAT-37', 'Chocolate', '37.3g bar', 30),
-    ('Nestle Munch Chocolate 23g', 'NES-MUNCH-23', 'Chocolate', '23g bar', 20),
-    ('Milkmaid Sweetened Condensed Milk 380g', 'NES-MILKMAID-380', 'Dairy', '380g tin', 147)
-) as seed(name, code, category, unit, mrp)
+    ('Maggi 2-Minute Masala Noodles 70g', 'NES-MAGGI-70', 'Instant noodles', '70g pack', 15, 'https://www.nicepng.com/png/detail/311-3113866_maggi-2-minute-noodles-masala-70g.png'),
+    ('Nescafe Classic Instant Coffee 24g', 'NES-NESCAFE-24', 'Coffee', '24g jar', 115, 'https://www.nestle.in/sites/g/files/pydnoa451/files/styles/product_showcase_image/public/Nescafe%20Classic-FOP-%28274x234%29px.png.webp?itok=9gUmgVZx'),
+    ('KitKat 4 Finger Chocolate 37.3g', 'NES-KITKAT-37', 'Chocolate', '37.3g bar', 30, 'https://www.kitkat.in/sites/default/files/styles/webp/public/2024-12/Kitkat-4F--38.5g--Backstory-Laminate.png.webp?itok=hX3FfYvr'),
+    ('Nestle Munch Chocolate 23g', 'NES-MUNCH-23', 'Chocolate', '23g bar', 20, 'https://www.nestle.in/sites/g/files/pydnoa451/files/styles/product_showcase_image/public/munch.png.webp'),
+    ('Milkmaid Sweetened Condensed Milk 380g', 'NES-MILKMAID-380', 'Dairy', '380g tin', 147, 'https://www.bigbasket.com/media/uploads/p/l/266070_17-nestle-milkmaid-sweetened-condensed-milk.jpg')
+) as seed(name, code, category, unit, mrp, image_url)
 where b.name = 'Nestle'
   and not exists (select 1 from skus s where s.code = seed.code);
 

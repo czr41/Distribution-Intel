@@ -191,6 +191,7 @@ create table if not exists skus (
   category text,
   unit text,
   mrp numeric,
+  image_url text,
   status text not null default 'active'
 );
 

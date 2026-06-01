@@ -143,8 +143,8 @@ const bulkTemplates: Record<BulkImportType, { title: string; filename: string; c
   sku: {
     title: "Product / SKU Bulk Import",
     filename: "shipd2r-product-sku-import-template.csv",
-    columns: ["name", "code", "brand", "category", "unit", "mrp", "status"],
-    sample: ["NourishCo Millet Bar 40g", "NC-MB-40", "NourishCo", "Snack bar", "box", "480", "Active"]
+    columns: ["name", "code", "brand", "category", "unit", "mrp", "imageUrl", "status"],
+    sample: ["Maggi 2-Minute Masala Noodles 70g", "NES-MAGGI-70", "Nestle", "Instant noodles", "70g pack", "15", "https://www.nicepng.com/png/detail/311-3113866_maggi-2-minute-noodles-masala-70g.png", "Active"]
   },
   salesman: {
     title: "Sales Rep Bulk Import",
@@ -206,6 +206,10 @@ function orderSkuOption(order?: OrderRow) {
 function brandLogo(brand: BrandOption) {
   if (brand.name.toLowerCase().includes("nestle")) return "/brand/nestle-logo.svg";
   return null;
+}
+
+function productImageFallback(sku: SkuRow) {
+  return `${sku.name.slice(0, 1)}${sku.brand.slice(0, 1)}`.toUpperCase();
 }
 
 function confidenceLabel(record: CommandRecord) {
@@ -2226,24 +2230,36 @@ function OutletsView({ outlets, onAdd, onEdit, onBulkImport }: { outlets: Outlet
 
 function ProductsView({ skus, onAdd, onEdit, onBulkImport }: { skus: SkuRow[]; onAdd: () => void; onEdit: (sku: SkuRow) => void; onBulkImport: () => void }) {
   return (
-    <CrudPanel title="Products / SKUs" description="Brand-level product master for order capture, bill line items, SKU movement, and retailer demand." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Product">
-      {skus.map((sku) => (
-        <article className="task-row" key={sku.id}>
-          <div className="queue-top">
-            <strong>{sku.name}</strong>
-            <div className="inline-actions">
-              <span className="tag blue">{sku.brand}</span>
-              <button className="link-button" onClick={() => onEdit(sku)}>Edit</button>
+    <CrudPanel title="Products / SKUs" description="Marketplace-style catalogue for retailer order capture, price checks, pack sizes, and SKU movement." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Product">
+      <div className="product-market-grid">
+        {skus.map((sku) => (
+          <article className="product-card" key={sku.id}>
+            <div className="product-media">
+              {sku.imageUrl ? (
+                <img src={sku.imageUrl} alt={sku.name} loading="lazy" onError={(event) => { event.currentTarget.src = "/brand/nestle-logo.svg"; }} />
+              ) : (
+                <span>{productImageFallback(sku)}</span>
+              )}
             </div>
-          </div>
-          <p>{sku.category} - {sku.code || "No SKU code"}</p>
-          <div className="record-meta">
-            <span>{sku.unit}</span>
-            <span>{money(sku.mrp)}</span>
-            <span className="tag">{sku.status}</span>
-          </div>
-        </article>
-      ))}
+            <div className="product-card-body">
+              <div className="queue-top">
+                <span className="tag blue">{sku.brand}</span>
+                <button className="link-button" onClick={() => onEdit(sku)}>Edit</button>
+              </div>
+              <h3>{sku.name}</h3>
+              <p>{sku.category}</p>
+              <div className="product-price-row">
+                <strong>{money(sku.mrp)}</strong>
+                <span>{sku.unit}</span>
+              </div>
+              <div className="record-meta">
+                <span>{sku.code || "No SKU code"}</span>
+                <span className="tag">{sku.status}</span>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
       {!skus.length && <p className="empty-state">No products or SKUs added yet.</p>}
     </CrudPanel>
   );
@@ -3079,6 +3095,7 @@ function MasterDataModal({
                 <Input name="category" label="Category" required={false} defaultValue={skuValues?.category === "Uncategorized" ? "" : skuValues?.category} />
                 <Input name="unit" label="Unit / pack size" required={false} defaultValue={skuValues?.unit === "Unit" ? "" : skuValues?.unit} />
                 <Input name="mrp" label="MRP" type="number" required={false} defaultValue={skuValues?.mrp ? String(skuValues.mrp) : undefined} />
+                <Input name="imageUrl" label="Product picture URL" type="url" required={false} defaultValue={skuValues?.imageUrl} />
                 <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={skuValues?.status} />
               </>
             )}

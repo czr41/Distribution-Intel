@@ -85,6 +85,7 @@ type SkuResult = {
   category: string | null;
   unit: string | null;
   mrp: number | string | null;
+  image_url: string | null;
   status: string | null;
   brands?: { name?: string | null } | { name?: string | null }[] | null;
 };
@@ -361,7 +362,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       .select("id,title,description,task_type,due_date,priority,status,outlets(name),brands(name),users(name)")
       .order("created_at", { ascending: false }),
     supabase.from("territories").select("id,name,city,state,region,status").order("created_at", { ascending: false }),
-    supabase.from("skus").select("id,name,code,category,unit,mrp,status,brands(name)").order("name", { ascending: true }),
+    supabase.from("skus").select("id,name,code,category,unit,mrp,image_url,status,brands(name)").order("name", { ascending: true }),
     supabase
       .from("payments")
       .select("id,amount_due,amount_collected,due_date,promised_payment_date,payment_mode,status,risk_level,outlets(name),brands(name)")
@@ -516,6 +517,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       category: sku.category ?? "Uncategorized",
       unit: sku.unit ?? "Unit",
       mrp: numberValue(sku.mrp),
+      imageUrl: sku.image_url ?? "",
       status: displayBrandStatus(sku.status)
     };
   });

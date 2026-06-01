@@ -101,6 +101,7 @@ const skuSchema = z.object({
   category: z.string().optional(),
   unit: z.string().optional(),
   mrp: z.string().optional(),
+  imageUrl: z.string().url().optional().or(z.literal("")),
   status: z.enum(["Active", "Inactive"])
 });
 
@@ -552,6 +553,7 @@ export async function createSkuAction(formData: FormData): Promise<SkuRow> {
     category: formValue(formData, "category"),
     unit: formValue(formData, "unit"),
     mrp: formValue(formData, "mrp"),
+    imageUrl: formValue(formData, "imageUrl"),
     status: formValue(formData, "status")
   });
 
@@ -568,9 +570,10 @@ export async function createSkuAction(formData: FormData): Promise<SkuRow> {
       category: input.category || null,
       unit: input.unit || null,
       mrp: input.mrp ? numberInput(input.mrp) : 0,
+      image_url: input.imageUrl || null,
       status: statusMap[input.status]
     })
-    .select("id,name,code,category,unit,mrp,status")
+    .select("id,name,code,category,unit,mrp,image_url,status")
     .single();
 
   if (error) throw new Error(error.message);
@@ -583,6 +586,7 @@ export async function createSkuAction(formData: FormData): Promise<SkuRow> {
     category: data.category ?? "Uncategorized",
     unit: data.unit ?? "Unit",
     mrp: numberValue(data.mrp),
+    imageUrl: data.image_url ?? "",
     status: skuStatus(data.status)
   };
 }
@@ -596,6 +600,7 @@ export async function updateSkuAction(formData: FormData): Promise<SkuRow> {
     category: formValue(formData, "category"),
     unit: formValue(formData, "unit"),
     mrp: formValue(formData, "mrp"),
+    imageUrl: formValue(formData, "imageUrl"),
     status: formValue(formData, "status")
   });
 
@@ -612,10 +617,11 @@ export async function updateSkuAction(formData: FormData): Promise<SkuRow> {
       category: input.category || null,
       unit: input.unit || null,
       mrp: input.mrp ? numberInput(input.mrp) : 0,
+      image_url: input.imageUrl || null,
       status: statusMap[input.status]
     })
     .eq("id", id)
-    .select("id,name,code,category,unit,mrp,status")
+    .select("id,name,code,category,unit,mrp,image_url,status")
     .single();
 
   if (error) throw new Error(error.message);
@@ -628,6 +634,7 @@ export async function updateSkuAction(formData: FormData): Promise<SkuRow> {
     category: data.category ?? "Uncategorized",
     unit: data.unit ?? "Unit",
     mrp: numberValue(data.mrp),
+    imageUrl: data.image_url ?? "",
     status: skuStatus(data.status)
   };
 }

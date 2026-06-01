@@ -95,6 +95,7 @@ export type SkuRow = {
   category: string;
   unit: string;
   mrp: number;
+  imageUrl: string;
   status: "Active" | "Inactive";
 };
 
