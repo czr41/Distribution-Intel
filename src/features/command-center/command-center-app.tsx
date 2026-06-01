@@ -179,8 +179,8 @@ const bulkTemplates: Record<BulkImportType, { title: string; filename: string; c
   order: {
     title: "Order Bulk Import",
     filename: "shipd2r-order-import-template.csv",
-    columns: ["outlet", "brand", "expectedValue", "expectedDeliveryDate", "status"],
-    sample: ["Sri Lakshmi Stores", "NourishCo", "8420", "2026-05-29", "Confirmed"]
+    columns: ["outlet", "sku", "quantity", "unitPrice", "expectedValue", "expectedDeliveryDate", "status"],
+    sample: ["Sri Lakshmi Stores", "Maggi 2-Minute Masala Noodles 70g (NES-MAGGI-70)", "24", "15", "360", "2026-05-29", "Confirmed"]
   },
   bill: {
     title: "Bill Bulk Import",
@@ -192,6 +192,20 @@ const bulkTemplates: Record<BulkImportType, { title: string; filename: string; c
 
 function money(value: number) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
+}
+
+function skuOption(sku: SkuRow) {
+  return sku.code ? `${sku.name} (${sku.code})` : sku.name;
+}
+
+function orderSkuOption(order?: OrderRow) {
+  if (!order?.sku || order.sku === "Unassigned SKU") return undefined;
+  return order.skuCode ? `${order.sku} (${order.skuCode})` : order.sku;
+}
+
+function brandLogo(brand: BrandOption) {
+  if (brand.name.toLowerCase().includes("nestle")) return "/brand/nestle-logo.svg";
+  return null;
 }
 
 function confidenceLabel(record: CommandRecord) {
@@ -391,6 +405,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       <SalesRepPortal
         user={currentUser}
         brands={brands}
+        skus={skus}
         tasks={tasks}
         outlets={outlets}
         orders={orders}
@@ -1093,6 +1108,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         <MasterDataModal
           type={modalType}
           brands={brands}
+          skus={skus}
           outlets={outlets}
           territories={territories}
           salesmen={salesmen}
@@ -1203,7 +1219,7 @@ function AdminDistributionDashboard({
   }, {});
 
   const recentSignals = [
-    ...orders.slice(0, 2).map((order) => ({ title: order.outlet, detail: `${order.brand} order pipeline - ${money(order.expectedValue)}`, tag: order.status })),
+    ...orders.slice(0, 2).map((order) => ({ title: order.outlet, detail: `${order.sku} order pipeline - ${money(order.expectedValue)}`, tag: order.status })),
     ...payments.slice(0, 2).map((payment) => ({ title: payment.outlet, detail: `${payment.brand} outstanding - ${money(Math.max(payment.amountDue - payment.amountCollected, 0))}`, tag: payment.riskLevel })),
     ...tasks.slice(0, 2).map((task) => ({ title: task.title, detail: `${task.assignedTo} - ${task.outlet}`, tag: task.priority }))
   ].slice(0, 5);
@@ -1472,7 +1488,7 @@ function ManagerDashboard({
                   <strong>{order.outlet}</strong>
                   <span className="tag blue">{order.status}</span>
                 </div>
-                <p>{order.brand} - {money(order.expectedValue)}</p>
+                <p>{order.sku} - {order.brand} - {money(order.expectedValue)}</p>
                 <div className="record-meta">
                   <span>Expected {order.expectedDeliveryDate || "not set"}</span>
                 </div>
@@ -1576,6 +1592,7 @@ function LoginScreen({ users, error, onLogin }: { users: AppUserRow[]; error: st
 function SalesRepPortal({
   user,
   brands,
+  skus,
   tasks,
   outlets,
   orders,
@@ -1587,6 +1604,7 @@ function SalesRepPortal({
 }: {
   user: AppUserRow;
   brands: BrandOption[];
+  skus: SkuRow[];
   tasks: TaskRow[];
   outlets: OutletRow[];
   orders: OrderRow[];
@@ -1602,6 +1620,7 @@ function SalesRepPortal({
   const [evidenceResult, setEvidenceResult] = useState<MediaLabResult | null>(null);
   const outletOptions = outlets.length ? outlets.map((outlet) => outlet.name) : ["Unassigned"];
   const brandOptions = brands.length ? brands.map((brand) => brand.name) : ["Unassigned"];
+  const skuOptions = skus.length ? skus.map(skuOption) : ["Unassigned"];
 
   async function submitVisit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1732,8 +1751,10 @@ function SalesRepPortal({
               <form className="master-form" onSubmit={submitOrder}>
                 <div className="form-grid">
                   <Select name="outlet" label="Outlet" options={outletOptions} />
-                  <Select name="brand" label="Client / brand" options={brandOptions} />
-                  <Input name="expectedValue" label="Expected value" type="number" placeholder="8500" />
+                  <Select name="sku" label="Product / SKU" options={skuOptions} />
+                  <Input name="quantity" label="Quantity" type="number" placeholder="24" />
+                  <Input name="unitPrice" label="Unit price" type="number" placeholder="Auto from MRP" required={false} />
+                  <Input name="expectedValue" label="Order value" type="number" placeholder="Auto from quantity" required={false} />
                   <Input name="expectedDeliveryDate" label="Expected delivery" type="date" required={false} />
                 </div>
                 <div className="action-row">
@@ -2284,10 +2305,14 @@ function PartnersView({
             const brandSkus = skus.filter((sku) => sku.brand === brand.name);
             const units = brandRecords.reduce((sum, record) => sum + record.units, 0);
             const value = brandRecords.reduce((sum, record) => sum + record.value, 0);
+            const logo = brandLogo(brand);
             return (
               <article className="partner-card" key={brand.id}>
                 <div className="queue-top">
-                  <h2>{brand.name}</h2>
+                  <div className="brand-lockup">
+                    {logo ? <img src={logo} alt={`${brand.name} logo`} /> : <span>{brand.name.slice(0, 1)}</span>}
+                    <h2>{brand.name}</h2>
+                  </div>
                   <button className="link-button" onClick={() => onEdit(brand)}>
                     Edit
                   </button>
@@ -2482,15 +2507,17 @@ function PaymentsView({ payments, onAdd, onEdit, onBulkImport }: { payments: Pay
 
 function OrdersView({ orders, onAdd, onEdit, onBulkImport }: { orders: OrderRow[]; onAdd: () => void; onEdit: (order: OrderRow) => void; onBulkImport: () => void }) {
   return (
-    <CrudPanel title="Orders" description="Order intents, confirmations, delivery expectations, and billing progression." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Order">
+    <CrudPanel title="Orders" description="Outlet order intents captured by product/SKU, with brand derived from the SKU master." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Order">
       {orders.map((order) => (
         <article className="task-row" key={order.id}>
           <div className="queue-top">
             <strong>{order.outlet}</strong>
             <button className="link-button" onClick={() => onEdit(order)}>Edit</button>
           </div>
-          <p>{order.brand} · {money(order.expectedValue)}</p>
+          <p>{order.sku}{order.skuCode ? ` (${order.skuCode})` : ""} - {order.brand}</p>
           <div className="record-meta">
+            <span>{order.quantity || 0} units</span>
+            <span>{money(order.expectedValue)}</span>
             <span>Delivery {order.expectedDeliveryDate}</span>
             <span className="tag blue">{order.status}</span>
           </div>
@@ -2951,6 +2978,7 @@ function BulkImportModal({
 function MasterDataModal({
   type,
   brands,
+  skus,
   outlets,
   territories,
   salesmen,
@@ -2961,6 +2989,7 @@ function MasterDataModal({
 }: {
   type: Exclude<ModalType, null>;
   brands: BrandOption[];
+  skus: SkuRow[];
   outlets: OutletRow[];
   territories: TerritoryRow[];
   salesmen: SalesmanRow[];
@@ -2992,6 +3021,7 @@ function MasterDataModal({
                   : "Outlet";
   const title = `${isEditing ? "Edit" : type === "task" ? "Create" : "Add"} ${noun}`;
   const brandOptions = brands.length ? brands.map((brand) => brand.name) : ["Unassigned"];
+  const skuOptions = skus.length ? skus.map(skuOption) : ["Unassigned"];
   const outletOptions = outlets.length ? outlets.map((outlet) => outlet.name) : ["Unassigned"];
   const territoryOptions = ["Unassigned", ...territories.map((territory) => territory.name)];
   const salesmanOptions = ["Unassigned", ...salesmen.map((person) => person.name)];
@@ -3109,8 +3139,10 @@ function MasterDataModal({
             {type === "order" && (
               <>
                 <Select name="outlet" label="Outlet" options={outletOptions} defaultValue={orderValues?.outlet} />
-                <Select name="brand" label="Brand client" options={brandOptions} defaultValue={orderValues?.brand} />
-                <Input name="expectedValue" label="Expected value" type="number" defaultValue={orderValues?.expectedValue ? String(orderValues.expectedValue) : undefined} />
+                <Select name="sku" label="Product / SKU" options={skuOptions} defaultValue={orderSkuOption(orderValues)} />
+                <Input name="quantity" label="Quantity" type="number" defaultValue={orderValues?.quantity ? String(orderValues.quantity) : undefined} />
+                <Input name="unitPrice" label="Unit price" type="number" required={false} defaultValue={orderValues?.unitPrice ? String(orderValues.unitPrice) : undefined} />
+                <Input name="expectedValue" label="Order value" type="number" required={false} defaultValue={orderValues?.expectedValue ? String(orderValues.expectedValue) : undefined} />
                 <Input name="expectedDeliveryDate" label="Expected delivery date" type="date" defaultValue={orderValues?.expectedDeliveryDate === "No delivery date" ? "" : orderValues?.expectedDeliveryDate} required={false} />
                 <Select name="status" label="Status" options={["Intent captured", "Confirmed", "Billed", "Delivered", "Cancelled", "On hold"]} defaultValue={orderValues?.status} />
               </>

@@ -115,6 +115,10 @@ export type OrderRow = {
   id: string;
   outlet: string;
   brand: string;
+  sku: string;
+  skuCode: string;
+  quantity: number;
+  unitPrice: number;
   expectedValue: number;
   expectedDeliveryDate: string;
   status: "Intent captured" | "Confirmed" | "Billed" | "Delivered" | "Cancelled" | "On hold";

@@ -143,8 +143,10 @@ const orderStatusMap = {
 
 const orderSchema = z.object({
   outlet: z.string().min(1),
-  brand: z.string().min(1),
-  expectedValue: z.string().min(1),
+  sku: z.string().min(1),
+  quantity: z.string().min(1),
+  unitPrice: z.string().optional(),
+  expectedValue: z.string().optional(),
   expectedDeliveryDate: z.string().optional(),
   status: z.enum(["Intent captured", "Confirmed", "Billed", "Delivered", "Cancelled", "On hold"])
 });
@@ -333,6 +335,45 @@ async function findOutletIdByName(supabase: ReturnType<typeof createSupabaseAdmi
   const { data, error } = await supabase.from("outlets").select("id").eq("name", outletName).limit(1).maybeSingle();
   if (error) throw new Error(error.message);
   return data?.id ?? null;
+}
+
+async function findSkuForOrder(supabase: ReturnType<typeof createSupabaseAdminClient>, skuLabel?: string) {
+  if (!skuLabel || skuLabel === "Unassigned") return null;
+  const codeMatch = skuLabel.match(/\(([^()]+)\)\s*$/);
+  const code = codeMatch?.[1]?.trim();
+  const name = code ? skuLabel.replace(/\s*\([^()]+\)\s*$/, "").trim() : skuLabel.trim();
+
+  const byCode = code
+    ? await supabase
+      .from("skus")
+      .select("id,name,code,mrp,brand_id,brands(name)")
+      .eq("code", code)
+      .limit(1)
+      .maybeSingle()
+    : null;
+
+  if (byCode?.error) throw new Error(byCode.error.message);
+  const byName = byCode?.data
+    ? byCode
+    : await supabase
+    .from("skus")
+    .select("id,name,code,mrp,brand_id,brands(name)")
+    .eq("name", name)
+    .limit(1)
+    .maybeSingle();
+
+  const { data, error } = byName;
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  const brand = Array.isArray(data.brands) ? data.brands[0] : data.brands;
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    code: (data.code ?? "") as string,
+    mrp: numberValue(data.mrp as number | string | null),
+    brandId: data.brand_id as string,
+    brandName: brand?.name ?? "Unassigned"
+  };
 }
 
 async function findUserIdByName(supabase: ReturnType<typeof createSupabaseAdminClient>, userName?: string) {
@@ -1212,20 +1253,27 @@ export async function updatePaymentAction(formData: FormData): Promise<PaymentRo
 export async function createOrderAction(formData: FormData): Promise<OrderRow> {
   const input = orderSchema.parse({
     outlet: formValue(formData, "outlet"),
-    brand: formValue(formData, "brand"),
+    sku: formValue(formData, "sku"),
+    quantity: formValue(formData, "quantity"),
+    unitPrice: formValue(formData, "unitPrice"),
     expectedValue: formValue(formData, "expectedValue"),
     expectedDeliveryDate: formValue(formData, "expectedDeliveryDate"),
     status: formValue(formData, "status")
   });
 
   const supabase = createSupabaseAdminClient();
-  const [brandId, outletId] = await Promise.all([findBrandIdByName(supabase, input.brand), findOutletIdByName(supabase, input.outlet)]);
+  const [sku, outletId] = await Promise.all([findSkuForOrder(supabase, input.sku), findOutletIdByName(supabase, input.outlet)]);
+  if (!sku) throw new Error("Choose a valid product/SKU before capturing an order.");
+  const quantity = numberInput(input.quantity);
+  const unitPrice = input.unitPrice ? numberInput(input.unitPrice) : sku.mrp;
+  const itemTotal = quantity * unitPrice;
+  const expectedValue = input.expectedValue ? numberInput(input.expectedValue) : itemTotal;
   const { data, error } = await supabase
     .from("orders")
     .insert({
       outlet_id: outletId,
-      brand_id: brandId,
-      expected_value: numberInput(input.expectedValue),
+      brand_id: sku.brandId,
+      expected_value: expectedValue,
       expected_delivery_date: input.expectedDeliveryDate || null,
       status: orderStatusMap[input.status]
     })
@@ -1233,11 +1281,23 @@ export async function createOrderAction(formData: FormData): Promise<OrderRow> {
     .single();
 
   if (error) throw new Error(error.message);
+  const { error: itemError } = await supabase.from("order_items").insert({
+    order_id: data.id,
+    sku_id: sku.id,
+    quantity,
+    unit_price: unitPrice,
+    total_value: itemTotal
+  });
+  if (itemError) throw new Error(itemError.message);
   revalidatePath("/");
   return {
     id: data.id,
     outlet: input.outlet,
-    brand: input.brand,
+    brand: sku.brandName,
+    sku: sku.name,
+    skuCode: sku.code,
+    quantity,
+    unitPrice,
     expectedValue: Number(data.expected_value ?? 0),
     expectedDeliveryDate: data.expected_delivery_date ?? "No delivery date",
     status: orderStatus(data.status)
@@ -1248,20 +1308,27 @@ export async function updateOrderAction(formData: FormData): Promise<OrderRow> {
   const id = formId(formData);
   const input = orderSchema.parse({
     outlet: formValue(formData, "outlet"),
-    brand: formValue(formData, "brand"),
+    sku: formValue(formData, "sku"),
+    quantity: formValue(formData, "quantity"),
+    unitPrice: formValue(formData, "unitPrice"),
     expectedValue: formValue(formData, "expectedValue"),
     expectedDeliveryDate: formValue(formData, "expectedDeliveryDate"),
     status: formValue(formData, "status")
   });
 
   const supabase = createSupabaseAdminClient();
-  const [brandId, outletId] = await Promise.all([findBrandIdByName(supabase, input.brand), findOutletIdByName(supabase, input.outlet)]);
+  const [sku, outletId] = await Promise.all([findSkuForOrder(supabase, input.sku), findOutletIdByName(supabase, input.outlet)]);
+  if (!sku) throw new Error("Choose a valid product/SKU before updating an order.");
+  const quantity = numberInput(input.quantity);
+  const unitPrice = input.unitPrice ? numberInput(input.unitPrice) : sku.mrp;
+  const itemTotal = quantity * unitPrice;
+  const expectedValue = input.expectedValue ? numberInput(input.expectedValue) : itemTotal;
   const { data, error } = await supabase
     .from("orders")
     .update({
       outlet_id: outletId,
-      brand_id: brandId,
-      expected_value: numberInput(input.expectedValue),
+      brand_id: sku.brandId,
+      expected_value: expectedValue,
       expected_delivery_date: input.expectedDeliveryDate || null,
       status: orderStatusMap[input.status],
       updated_at: new Date().toISOString()
@@ -1271,11 +1338,25 @@ export async function updateOrderAction(formData: FormData): Promise<OrderRow> {
     .single();
 
   if (error) throw new Error(error.message);
+  const { error: deleteItemError } = await supabase.from("order_items").delete().eq("order_id", id);
+  if (deleteItemError) throw new Error(deleteItemError.message);
+  const { error: itemError } = await supabase.from("order_items").insert({
+    order_id: id,
+    sku_id: sku.id,
+    quantity,
+    unit_price: unitPrice,
+    total_value: itemTotal
+  });
+  if (itemError) throw new Error(itemError.message);
   revalidatePath("/");
   return {
     id: data.id,
     outlet: input.outlet,
-    brand: input.brand,
+    brand: sku.brandName,
+    sku: sku.name,
+    skuCode: sku.code,
+    quantity,
+    unitPrice,
     expectedValue: Number(data.expected_value ?? 0),
     expectedDeliveryDate: data.expected_delivery_date ?? "No delivery date",
     status: orderStatus(data.status)
@@ -1501,12 +1582,16 @@ export async function approveVerificationDraftAction(formData: FormData): Promis
     if (error) throw new Error(error.message);
     approvedEntityId = data.id;
   } else if (input.recordType === "order") {
+    const sku = await findSkuForOrder(supabase, input.sku);
+    const quantity = optionalNumberInput(input.quantity) || 1;
+    const unitPrice = sku?.mrp ?? amount;
+    const expectedValue = amount || quantity * unitPrice;
     const { data, error } = await supabase
       .from("orders")
       .insert({
         outlet_id: outletId,
-        brand_id: brandId,
-        expected_value: amount,
+        brand_id: sku?.brandId ?? brandId,
+        expected_value: expectedValue,
         expected_delivery_date: input.dueDate || null,
         status: "intent_captured",
         source_message_id: current.incoming_message_id
@@ -1515,6 +1600,16 @@ export async function approveVerificationDraftAction(formData: FormData): Promis
       .single();
     if (error) throw new Error(error.message);
     approvedEntityId = data.id;
+    if (sku) {
+      const { error: itemError } = await supabase.from("order_items").insert({
+        order_id: data.id,
+        sku_id: sku.id,
+        quantity,
+        unit_price: unitPrice,
+        total_value: quantity * unitPrice
+      });
+      if (itemError) throw new Error(itemError.message);
+    }
   } else if (input.recordType === "bill") {
     const { data, error } = await supabase
       .from("bills")

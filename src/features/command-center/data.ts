@@ -109,6 +109,20 @@ type OrderResult = {
   status: string | null;
   outlets?: { name?: string | null } | { name?: string | null }[] | null;
   brands?: { name?: string | null } | { name?: string | null }[] | null;
+  order_items?: {
+    quantity?: number | string | null;
+    unit_price?: number | string | null;
+    total_value?: number | string | null;
+    skus?: {
+      name?: string | null;
+      code?: string | null;
+      brands?: { name?: string | null } | { name?: string | null }[] | null;
+    } | {
+      name?: string | null;
+      code?: string | null;
+      brands?: { name?: string | null } | { name?: string | null }[] | null;
+    }[] | null;
+  }[] | null;
 };
 
 type BillResult = {
@@ -354,7 +368,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       .order("created_at", { ascending: false }),
     supabase
       .from("orders")
-      .select("id,expected_value,expected_delivery_date,status,outlets(name),brands(name)")
+      .select("id,expected_value,expected_delivery_date,status,outlets(name),brands(name),order_items(quantity,unit_price,total_value,skus(name,code,brands(name)))")
       .order("created_at", { ascending: false }),
     supabase
       .from("bills")
@@ -527,11 +541,18 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   const orders: OrderRow[] = ((ordersResult.data ?? []) as OrderResult[]).map((order) => {
     const outlet = Array.isArray(order.outlets) ? order.outlets[0] : order.outlets;
     const brand = Array.isArray(order.brands) ? order.brands[0] : order.brands;
+    const item = order.order_items?.[0];
+    const sku = Array.isArray(item?.skus) ? item?.skus[0] : item?.skus;
+    const skuBrand = Array.isArray(sku?.brands) ? sku?.brands[0] : sku?.brands;
 
     return {
       id: order.id,
       outlet: outlet?.name ?? "Unassigned",
-      brand: brand?.name ?? "Unassigned",
+      brand: brand?.name ?? skuBrand?.name ?? "Unassigned",
+      sku: sku?.name ?? "Unassigned SKU",
+      skuCode: sku?.code ?? "",
+      quantity: numberValue(item?.quantity),
+      unitPrice: numberValue(item?.unit_price),
       expectedValue: numberValue(order.expected_value),
       expectedDeliveryDate: order.expected_delivery_date ?? "No delivery date",
       status: displayOrderStatus(order.status)

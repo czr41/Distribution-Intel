@@ -932,6 +932,40 @@ textarea {
   gap: 12px;
 }
 
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.brand-lockup img,
+.brand-lockup span {
+  width: 46px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.brand-lockup img {
+  object-fit: contain;
+  padding: 5px;
+}
+
+.brand-lockup span {
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.brand-lockup h2 {
+  min-width: 0;
+  margin: 0;
+}
+
 .bar {
   height: 10px;
   background: var(--surface-strong);

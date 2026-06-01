@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 110" role="img" aria-labelledby="title">
+  <title id="title">Nestle logo</title>
+  <rect width="320" height="110" rx="12" fill="#fff"/>
+  <path d="M28 76c18-23 38-37 61-42 17-4 34-3 51 4 21 8 39 9 56 3 12-4 23-10 34-18" fill="none" stroke="#4f4135" stroke-width="7" stroke-linecap="round"/>
+  <text x="35" y="72" fill="#4f4135" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="700">Nestle</text>
+  <path d="M62 31c9-13 19-20 30-20 8 0 15 4 20 11-17-1-33 2-50 9Z" fill="#4f4135" opacity=".16"/>
+</svg>
