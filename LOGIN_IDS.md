@@ -6,7 +6,7 @@ Last updated: June 2, 2026
 
 Use the user's email, phone number, or name as the login identifier.
 
-The access code is the last 4 digits of that user's phone number.
+The access code is the last 4 digits of that user's phone number. Codes with leading zeroes can be entered with or without those zeroes.
 
 If no admin user exists yet, use:
 
@@ -19,9 +19,9 @@ If no admin user exists yet, use:
 | Role | Name | Login email | Phone | Access code | Territory / Notes |
 | --- | --- | --- | --- | --- | --- |
 | Manager | Ops Manager | ops.manager@example.com | +91 98888 19999 | 9999 | Operations manager workspace |
-| Sales Executive | Meera S. | meera.field@example.com | +91 98888 10001 | 0001 | Pune West |
-| Sales Executive | Arjun K. | arjun.field@example.com | +91 98888 10002 | 0002 | Nashik Core |
-| Sales Executive | Ravi M. | ravi.field@example.com | +91 98888 10003 | 0003 | Thane Retail |
+| Sales Executive | Meera S. | meera.field@example.com | +91 98888 10001 | 0001 or 1 | Pune West |
+| Sales Executive | Arjun K. | arjun.field@example.com | +91 98888 10002 | 0002 or 2 | Nashik Core |
+| Sales Executive | Ravi M. | ravi.field@example.com | +91 98888 10003 | 0003 or 3 | Thane Retail |
 
 ## Role Options In The App
 

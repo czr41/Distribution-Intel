@@ -283,6 +283,27 @@ function loginCodeFor(user: AppUserRow) {
   return digits.slice(-4) || "0000";
 }
 
+function normalizeLoginText(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function loginIdentifierMatches(user: AppUserRow, identifier: string) {
+  const normalizedIdentifier = normalizeLoginText(identifier);
+  const identifierDigits = identifier.replace(/\D/g, "");
+  const normalizedPhone = user.phone.replace(/\D/g, "");
+  const identifiers = [user.email, user.phone, user.name].map(normalizeLoginText);
+  return (
+    identifiers.some((value) => value === normalizedIdentifier) ||
+    (Boolean(identifierDigits) && Boolean(normalizedPhone) && (identifierDigits === normalizedPhone || normalizedPhone.endsWith(identifierDigits)))
+  );
+}
+
+function accessCodeMatches(user: AppUserRow, accessCode: string) {
+  const expected = loginCodeFor(user);
+  const normalizedAccessCode = accessCode.replace(/\D/g, "");
+  return Boolean(normalizedAccessCode) && (accessCode === expected || normalizedAccessCode === expected || String(Number(normalizedAccessCode)) === String(Number(expected)));
+}
+
 export function CommandCenterApp({ initialData, actions }: { initialData: CommandCenterData; actions: CommandCenterActions }) {
   const [currentUser, setCurrentUser] = useState<AppUserRow | null>(null);
   const [activeView, setActiveView] = useState<View>("command");
@@ -322,7 +343,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const role = String(form.get("role") ?? "");
-    const identifier = String(form.get("identifier") ?? "").trim().toLowerCase();
+    const identifier = String(form.get("identifier") ?? "").trim();
     const accessCode = String(form.get("accessCode") ?? "").trim();
     const roleMatches: Record<string, AppUserRow["role"][]> = {
       Admin: ["super_admin", "admin_operator"],
@@ -352,8 +373,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     }
 
     const matched = users.find((user) => {
-      const identifiers = [user.email, user.phone, user.name].map((value) => value.toLowerCase());
-      return roleMatches[role]?.includes(user.role) && identifiers.some((value) => value === identifier) && loginCodeFor(user) === accessCode;
+      return roleMatches[role]?.includes(user.role) && loginIdentifierMatches(user, identifier) && accessCodeMatches(user, accessCode);
     });
 
     if (matched) {

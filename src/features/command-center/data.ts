@@ -276,6 +276,51 @@ function roleLabel(role: AppUserRow["role"]) {
   return labels[role] ?? role;
 }
 
+function seededDemoUsers(): AppUserRow[] {
+  return [
+    {
+      id: "seeded-ops-manager",
+      name: "Ops Manager",
+      email: "ops.manager@example.com",
+      phone: "+91 98888 19999",
+      role: "operations_manager",
+      roleLabel: "Manager",
+      territory: "All territories",
+      status: "Active"
+    },
+    {
+      id: "seeded-meera-field",
+      name: "Meera S.",
+      email: "meera.field@example.com",
+      phone: "+91 98888 10001",
+      role: "field_executive",
+      roleLabel: "Sales Executive",
+      territory: "Pune West",
+      status: "Active"
+    },
+    {
+      id: "seeded-arjun-field",
+      name: "Arjun K.",
+      email: "arjun.field@example.com",
+      phone: "+91 98888 10002",
+      role: "field_executive",
+      roleLabel: "Sales Executive",
+      territory: "Nashik Core",
+      status: "Active"
+    },
+    {
+      id: "seeded-ravi-field",
+      name: "Ravi M.",
+      email: "ravi.field@example.com",
+      phone: "+91 98888 10003",
+      role: "field_executive",
+      roleLabel: "Sales Executive",
+      territory: "Thane Retail",
+      status: "Active"
+    }
+  ];
+}
+
 function defaultMetaIntegration(): MetaIntegrationSettings {
   return {
     displayName: "Meta WhatsApp Cloud API",
@@ -416,7 +461,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     status: displayBrandStatus(brand.status)
   }));
 
-  const users: AppUserRow[] = ((usersResult.data ?? []) as AppUserResult[]).map((user) => ({
+  const usersFromDatabase: AppUserRow[] = ((usersResult.data ?? []) as AppUserResult[]).map((user) => ({
     id: user.id,
     name: user.name,
     email: user.email ?? "",
@@ -426,6 +471,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     territory: "Managed in Sales App & Team",
     status: displayUserStatus(user.status)
   }));
+  const users = usersFromDatabase.length ? usersFromDatabase : seededDemoUsers();
 
   const outlets: OutletRow[] = ((outletsResult.data ?? []) as OutletResult[]).map((outlet) => {
     const linkedBrand = Array.isArray(outlet.outlet_brands) ? outlet.outlet_brands[0]?.brands : undefined;
