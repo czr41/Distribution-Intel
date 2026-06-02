@@ -15,6 +15,8 @@ const brandSchema = z.object({
   name: z.string().min(1),
   category: z.string().min(1),
   contact: z.string().min(1),
+  contactEmail: z.string().email().optional().or(z.literal("")),
+  contactPhone: z.string().optional(),
   status: z.enum(["Active", "Inactive"])
 });
 
@@ -485,6 +487,8 @@ export async function createBrandAction(formData: FormData): Promise<BrandOption
     name: formValue(formData, "name"),
     category: formValue(formData, "category"),
     contact: formValue(formData, "contact"),
+    contactEmail: formValue(formData, "contactEmail"),
+    contactPhone: formValue(formData, "contactPhone"),
     status: formValue(formData, "status")
   });
 
@@ -495,9 +499,11 @@ export async function createBrandAction(formData: FormData): Promise<BrandOption
       name: input.name,
       category: input.category,
       contact_person: input.contact,
+      contact_email: input.contactEmail || null,
+      contact_phone: input.contactPhone || null,
       status: statusMap[input.status]
     })
-    .select("id,name,category,contact_person,status")
+    .select("id,name,category,contact_person,contact_email,contact_phone,status")
     .single();
 
   if (error) throw new Error(error.message);
@@ -507,6 +513,8 @@ export async function createBrandAction(formData: FormData): Promise<BrandOption
     name: data.name,
     category: data.category ?? "Uncategorized",
     contact: data.contact_person ?? "Internal ops",
+    contactEmail: data.contact_email ?? "",
+    contactPhone: data.contact_phone ?? "",
     status: brandStatus(data.status)
   };
 }
@@ -517,6 +525,8 @@ export async function updateBrandAction(formData: FormData): Promise<BrandOption
     name: formValue(formData, "name"),
     category: formValue(formData, "category"),
     contact: formValue(formData, "contact"),
+    contactEmail: formValue(formData, "contactEmail"),
+    contactPhone: formValue(formData, "contactPhone"),
     status: formValue(formData, "status")
   });
 
@@ -527,11 +537,13 @@ export async function updateBrandAction(formData: FormData): Promise<BrandOption
       name: input.name,
       category: input.category,
       contact_person: input.contact,
+      contact_email: input.contactEmail || null,
+      contact_phone: input.contactPhone || null,
       status: statusMap[input.status],
       updated_at: new Date().toISOString()
     })
     .eq("id", id)
-    .select("id,name,category,contact_person,status")
+    .select("id,name,category,contact_person,contact_email,contact_phone,status")
     .single();
 
   if (error) throw new Error(error.message);
@@ -541,6 +553,8 @@ export async function updateBrandAction(formData: FormData): Promise<BrandOption
     name: data.name,
     category: data.category ?? "Uncategorized",
     contact: data.contact_person ?? "Internal ops",
+    contactEmail: data.contact_email ?? "",
+    contactPhone: data.contact_phone ?? "",
     status: brandStatus(data.status)
   };
 }

@@ -4,7 +4,7 @@ with inserted_brands as (
     ('NourishCo', 'Nutrition', 'Ananya Rao', 'ananya@nourishco.example', '+91 90000 20001', 'active'),
     ('GlowWell', 'Personal care', 'Karan Mehta', 'karan@glowwell.example', '+91 90000 20002', 'active'),
     ('DailyBite', 'Packaged foods', 'Priya Nair', 'priya@dailybite.example', '+91 90000 20003', 'active'),
-    ('Nestle', 'Food and beverage', 'Nestle India Trade Desk', 'trade@nestle.example', '+91 90000 20004', 'active')
+    ('Nestle', 'Food and beverage', 'Nestle South Regional HQ - Bengaluru procurement desk', 'south.procurement@nestle.example', '+91 80400 02200', 'active')
   on conflict do nothing
   returning id, name
 ), all_brands as (

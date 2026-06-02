@@ -19,7 +19,40 @@ export type BrandOption = {
   name: string;
   category: string;
   contact: string;
+  contactEmail: string;
+  contactPhone: string;
   status: "Active" | "Inactive";
+};
+
+export type ProcurementOffice = {
+  id: string;
+  brand: string;
+  officeName: string;
+  region: string;
+  city: string;
+  state: string;
+  contact: string;
+  phone: string;
+  email: string;
+  procurementRole: string;
+  leadTimeDays: number;
+  replenishmentMode: string;
+  status: "Primary" | "Alternate" | "Inactive";
+};
+
+export type MaterialFlowRow = {
+  id: string;
+  brand: string;
+  sku: string;
+  skuCode: string;
+  movementType: "Inbound procurement" | "Outbound sale" | "Billed dispatch" | "Return / hold";
+  fromLocation: string;
+  toLocation: string;
+  quantity: number;
+  value: number;
+  expectedDate: string;
+  status: string;
+  documentRef: string;
 };
 
 export type OutletRow = {
@@ -203,6 +236,8 @@ export type CommandCenterData = {
   records: CommandRecord[];
   users: AppUserRow[];
   brands: BrandOption[];
+  procurementOffices: ProcurementOffice[];
+  materialFlows: MaterialFlowRow[];
   outlets: OutletRow[];
   salesmen: SalesmanRow[];
   skus: SkuRow[];

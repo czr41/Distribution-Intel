@@ -36,6 +36,8 @@ export default async function Home() {
     records: [],
     users: [],
     brands: [],
+    procurementOffices: [],
+    materialFlows: [],
     outlets: [],
     salesmen: [],
     skus: [],

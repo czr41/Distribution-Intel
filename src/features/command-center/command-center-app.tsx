@@ -9,11 +9,13 @@ import type {
   BrandOption,
   CommandCenterData,
   CommandRecord,
+  MaterialFlowRow,
   MetaIntegrationSettings,
   OpenAIIntegrationSettings,
   OrderRow,
   OutletRow,
   PaymentRow,
+  ProcurementOffice,
   SalesmanRow,
   SkuRow,
   TaskRow,
@@ -21,7 +23,7 @@ import type {
   VerificationDraftRecord
 } from "./types";
 
-type View = "command" | "inbox" | "verification" | "media" | "outlets" | "products" | "tasks" | "payments" | "orders" | "bills" | "territories" | "finance" | "reports" | "partners" | "ops" | "users" | "crm-sync" | "integrations";
+type View = "command" | "inbox" | "verification" | "media" | "outlets" | "products" | "procurement" | "tasks" | "payments" | "orders" | "bills" | "territories" | "finance" | "reports" | "partners" | "ops" | "users" | "crm-sync" | "integrations";
 type MediaLabResult = {
   fileName: string;
   fileType: string;
@@ -113,6 +115,7 @@ const viewTitles: Record<View, string> = {
   media: "Evidence Extraction Studio",
   outlets: "Outlet Master",
   products: "Product Catalog",
+  procurement: "Procurement and Material Flow",
   tasks: "Task Control",
   payments: "Payment Control",
   orders: "Order Pipeline",
@@ -137,8 +140,8 @@ const bulkTemplates: Record<BulkImportType, { title: string; filename: string; c
   brand: {
     title: "Client Bulk Import",
     filename: "shipd2r-client-import-template.csv",
-    columns: ["name", "category", "contact", "status"],
-    sample: ["NourishCo", "Packaged foods", "Ananya Rao", "Active"]
+    columns: ["name", "category", "contact", "contactEmail", "contactPhone", "status"],
+    sample: ["Nestle", "FMCG foods and beverages", "Regional procurement desk", "south.procurement@nestle.example", "08040002200", "Active"]
   },
   sku: {
     title: "Product / SKU Bulk Import",
@@ -944,6 +947,10 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Add Product", action: () => openCreate("sku") },
       { label: "Bulk Import", action: () => openBulkImport("sku") }
     ],
+    procurement: [
+      { label: "Add Client", action: () => openCreate("brand") },
+      { label: "Add Product", action: () => openCreate("sku") }
+    ],
     tasks: [
       { label: "Create Task", action: () => openCreate("task") },
       { label: "Bulk Import", action: () => openBulkImport("task") }
@@ -1000,7 +1007,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         <nav className="nav-tabs" aria-label="Views">
           {visibleViews.map((view) => (
             <button key={view} className={`nav-tab ${activeView === view ? "active" : ""}`} onClick={() => setActiveView(view)}>
-              <span>{view === "ops" ? "Sales App" : view === "inbox" ? "Retailer WhatsApp" : view === "users" ? "Users" : view === "products" ? "Products / SKUs" : view === "crm-sync" ? "CRM Sync" : view[0].toUpperCase() + view.slice(1)}</span>
+              <span>{view === "ops" ? "Sales App" : view === "inbox" ? "Retailer WhatsApp" : view === "users" ? "Users" : view === "products" ? "Products / SKUs" : view === "procurement" ? "Procurement" : view === "crm-sync" ? "CRM Sync" : view[0].toUpperCase() + view.slice(1)}</span>
             </button>
           ))}
         </nav>
@@ -1102,8 +1109,9 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         {activeView === "media" && <MediaLabView aiProvider={aiProvider} />}
         {activeView === "outlets" && <OutletsView outlets={outlets} onAdd={() => openCreate("outlet")} onEdit={(outlet) => openEdit({ type: "outlet", record: outlet })} onBulkImport={() => openBulkImport("outlet")} />}
         {activeView === "products" && <ProductsView skus={skus} onAdd={() => openCreate("sku")} onEdit={(sku) => openEdit({ type: "sku", record: sku })} onBulkImport={() => openBulkImport("sku")} />}
+        {activeView === "procurement" && <ProcurementFlowView brands={brands} procurementOffices={initialData.procurementOffices} materialFlows={initialData.materialFlows} skus={skus} orders={orders} bills={bills} />}
         {activeView === "partners" && (
-          <PartnersView brands={brands} skus={skus} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onAddSku={() => openCreate("sku")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onBulkImport={() => openBulkImport("brand")} />
+          <PartnersView brands={brands} procurementOffices={initialData.procurementOffices} skus={skus} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onAddSku={() => openCreate("sku")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onBulkImport={() => openBulkImport("brand")} />
         )}
         {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => openCreate("salesman")} onEdit={(person) => openEdit({ type: "salesman", record: person })} onBulkImport={() => openBulkImport("salesman")} />}
         {activeView === "users" && <UsersView users={users} onAdd={() => openCreate("user")} onEdit={(user) => openEdit({ type: "user", record: user })} onBulkImport={() => openBulkImport("user")} />}
@@ -2360,8 +2368,130 @@ function ProductsView({ skus, onAdd, onEdit, onBulkImport }: { skus: SkuRow[]; o
   );
 }
 
+function ProcurementFlowView({
+  brands,
+  procurementOffices,
+  materialFlows,
+  skus,
+  orders,
+  bills
+}: {
+  brands: BrandOption[];
+  procurementOffices: ProcurementOffice[];
+  materialFlows: MaterialFlowRow[];
+  skus: SkuRow[];
+  orders: OrderRow[];
+  bills: BillRow[];
+}) {
+  const inboundFlows = materialFlows.filter((flow) => flow.movementType === "Inbound procurement");
+  const outboundFlows = materialFlows.filter((flow) => flow.movementType !== "Inbound procurement");
+  const totalInboundValue = inboundFlows.reduce((sum, flow) => sum + flow.value, 0);
+  const totalOutboundValue = outboundFlows.reduce((sum, flow) => sum + flow.value, 0);
+
+  return (
+    <section className="procurement-layout">
+      <article className="panel procurement-hero-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Material movement model</p>
+            <h2>Procurement to Distributor to Outlet</h2>
+            <p>Track where each brand is procured from, how stock reaches the distributor, and how it moves out through orders and billed dispatches.</p>
+          </div>
+        </div>
+        <div className="procurement-flow-map">
+          <div>
+            <span>Brand source</span>
+            <strong>Regional HQ / supply office</strong>
+            <small>{procurementOffices.length} procurement points</small>
+          </div>
+          <i />
+          <div>
+            <span>Distributor</span>
+            <strong>Warehouse + billing desk</strong>
+            <small>{skus.length} SKU records</small>
+          </div>
+          <i />
+          <div>
+            <span>Market</span>
+            <strong>Retail outlets</strong>
+            <small>{orders.length} orders, {bills.length} bills</small>
+          </div>
+        </div>
+      </article>
+
+      <section className="metrics-grid">
+        <Metric label="Procurement offices" value={procurementOffices.length} detail="Regional HQs and alternate sources" />
+        <Metric label="Inbound value" value={money(totalInboundValue)} detail="Planned distributor replenishment" />
+        <Metric label="Outbound value" value={money(totalOutboundValue)} detail="Orders and billed dispatches" />
+        <Metric label="Active brands" value={brands.filter((brand) => brand.status === "Active").length} detail="Clients with procurement mapping" />
+      </section>
+
+      <section className="procurement-grid">
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Brand Procurement Offices</h2>
+              <p>Capture the offices the distributor buys from. Large clients can have regional HQs, supply desks, and head-office approval points.</p>
+            </div>
+          </div>
+          <div className="procurement-office-list">
+            {procurementOffices.map((office) => (
+              <article className="procurement-office-card" key={office.id}>
+                <div className="queue-top">
+                  <div>
+                    <strong>{office.officeName}</strong>
+                    <p>{office.brand} · {office.region}</p>
+                  </div>
+                  <span className={`tag ${office.status === "Primary" ? "green" : ""}`}>{office.status}</span>
+                </div>
+                <div className="field-grid">
+                  <Field label="Location" value={`${office.city}, ${office.state}`} />
+                  <Field label="Lead time" value={`${office.leadTimeDays} days`} />
+                  <Field label="Mode" value={office.replenishmentMode} />
+                  <Field label="Contact" value={office.contact} />
+                </div>
+                <p>{office.procurementRole}</p>
+              </article>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Material Flow Register</h2>
+              <p>Inbound procurement, outbound order movement, and billed dispatches in one operational register.</p>
+            </div>
+          </div>
+          <div className="material-flow-list">
+            {materialFlows.map((flow) => (
+              <article className="material-flow-row" key={flow.id}>
+                <div>
+                  <span className="tag blue">{flow.movementType}</span>
+                  <strong>{flow.sku}</strong>
+                  <small>{flow.brand}{flow.skuCode ? ` · ${flow.skuCode}` : ""}</small>
+                </div>
+                <div className="flow-route">
+                  <span>{flow.fromLocation}</span>
+                  <b>→</b>
+                  <span>{flow.toLocation}</span>
+                </div>
+                <div className="flow-value">
+                  <strong>{money(flow.value)}</strong>
+                  <small>{flow.quantity} units · {flow.status}</small>
+                </div>
+              </article>
+            ))}
+          </div>
+        </article>
+      </section>
+    </section>
+  );
+}
+
 function PartnersView({
   brands,
+  procurementOffices,
   skus,
   records,
   partnerFilter,
@@ -2372,6 +2502,7 @@ function PartnersView({
   onBulkImport
 }: {
   brands: BrandOption[];
+  procurementOffices: ProcurementOffice[];
   skus: SkuRow[];
   records: CommandRecord[];
   partnerFilter: string;
@@ -2417,6 +2548,7 @@ function PartnersView({
             const units = brandRecords.reduce((sum, record) => sum + record.units, 0);
             const value = brandRecords.reduce((sum, record) => sum + record.value, 0);
             const logo = brandLogo(brand);
+            const brandOffices = procurementOffices.filter((office) => office.brand === brand.name);
             return (
               <article className="partner-card" key={brand.id}>
                 <div className="queue-top">
@@ -2429,11 +2561,26 @@ function PartnersView({
                   </button>
                 </div>
                 <p>{brand.category} client managed by {brand.contact}</p>
+                <div className="procurement-office-strip">
+                  {(brandOffices.length ? brandOffices : [{
+                    id: `${brand.id}-capture`,
+                    officeName: "Procurement office not captured",
+                    city: "Add client details",
+                    region: "Pending",
+                    status: "Inactive" as const
+                  }]).slice(0, 3).map((office) => (
+                    <span key={office.id}>
+                      <strong>{office.officeName}</strong>
+                      {office.city} · {office.region}
+                    </span>
+                  ))}
+                </div>
                 <div className="field-grid">
                   <Field label="Verified outlets" value={brandRecords.length} />
                   <Field label="Sales" value={money(value)} />
                   <Field label="Units" value={units} />
                   <Field label="Products / SKUs" value={brandSkus.length} />
+                  <Field label="Source offices" value={brandOffices.length || 1} />
                   <Field label="Status" value={brand.status} />
                 </div>
               </article>
@@ -3178,7 +3325,9 @@ function MasterDataModal({
               <>
                 <Input name="name" label="Brand / client name" defaultValue={brandValues?.name} />
                 <Input name="category" label="Category" defaultValue={brandValues?.category} />
-                <Input name="contact" label="Contact person" defaultValue={brandValues?.contact} />
+                <Input name="contact" label="Primary procurement office / contact" defaultValue={brandValues?.contact} />
+                <Input name="contactEmail" label="Procurement email" type="email" required={false} defaultValue={brandValues?.contactEmail} />
+                <Input name="contactPhone" label="Procurement phone" required={false} defaultValue={brandValues?.contactPhone} />
                 <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={brandValues?.status} />
               </>
             )}

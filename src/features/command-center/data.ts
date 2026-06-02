@@ -6,11 +6,13 @@ import type {
   BrandOption,
   CommandCenterData,
   CommandRecord,
+  MaterialFlowRow,
   MetaIntegrationSettings,
   OpenAIIntegrationSettings,
   OrderRow,
   OutletRow,
   PaymentRow,
+  ProcurementOffice,
   SalesmanRow,
   SkuRow,
   TaskRow,
@@ -374,6 +376,133 @@ function openAIConfigFromJson(config: unknown): Partial<OpenAIIntegrationSetting
   return openAI as Partial<OpenAIIntegrationSettings> & { apiKey?: string };
 }
 
+function procurementOfficesForBrand(brand: BrandOption): ProcurementOffice[] {
+  if (brand.name.toLowerCase().includes("nestle")) {
+    return [
+      {
+        id: `${brand.id}-south`,
+        brand: brand.name,
+        officeName: "Nestle South Regional HQ",
+        region: "South India",
+        city: "Bengaluru",
+        state: "Karnataka",
+        contact: brand.contact,
+        phone: brand.contactPhone || "+91 80 4000 2200",
+        email: brand.contactEmail || "south.procurement@nestle.example",
+        procurementRole: "Primary procurement, schemes, stock allocation, and distributor replenishment approvals",
+        leadTimeDays: 3,
+        replenishmentMode: "Regional PO, distributor GRN, invoice-backed dispatch",
+        status: "Primary"
+      },
+      {
+        id: `${brand.id}-west`,
+        brand: brand.name,
+        officeName: "Nestle West Supply Office",
+        region: "West India",
+        city: "Mumbai",
+        state: "Maharashtra",
+        contact: "Regional supply desk",
+        phone: "+91 22 6000 1144",
+        email: "west.supply@nestle.example",
+        procurementRole: "Alternate replenishment point for inter-region shortages and promotional stock",
+        leadTimeDays: 5,
+        replenishmentMode: "Transfer order and distributor invoice",
+        status: "Alternate"
+      },
+      {
+        id: `${brand.id}-north`,
+        brand: brand.name,
+        officeName: "Nestle North Procurement Office",
+        region: "North India",
+        city: "Gurugram",
+        state: "Haryana",
+        contact: "National procurement desk",
+        phone: "+91 124 500 7000",
+        email: "national.procurement@nestle.example",
+        procurementRole: "Central policy, price lists, credit terms, and distributor onboarding documentation",
+        leadTimeDays: 7,
+        replenishmentMode: "Head office approval and regional release",
+        status: "Alternate"
+      }
+    ];
+  }
+
+  return [
+    {
+      id: `${brand.id}-primary`,
+      brand: brand.name,
+      officeName: `${brand.name} primary procurement office`,
+      region: "Assigned region",
+      city: "Unassigned",
+      state: "Unassigned",
+      contact: brand.contact,
+      phone: brand.contactPhone || "Not captured",
+      email: brand.contactEmail || "Not captured",
+      procurementRole: "Distributor purchase orders, price list confirmation, stock allocation, and scheme communication",
+      leadTimeDays: 4,
+      replenishmentMode: "Purchase order, goods receipt, and invoice reconciliation",
+      status: "Primary"
+    }
+  ];
+}
+
+function buildMaterialFlows(procurementOffices: ProcurementOffice[], skus: SkuRow[], orders: OrderRow[], bills: BillRow[]): MaterialFlowRow[] {
+  const flows: MaterialFlowRow[] = [];
+  skus.slice(0, 8).forEach((sku) => {
+    const office = procurementOffices.find((item) => item.brand === sku.brand && item.status === "Primary") ?? procurementOffices.find((item) => item.brand === sku.brand);
+    flows.push({
+      id: `inbound-${sku.id}`,
+      brand: sku.brand,
+      sku: sku.name,
+      skuCode: sku.code,
+      movementType: "Inbound procurement",
+      fromLocation: office ? `${office.officeName}, ${office.city}` : `${sku.brand} procurement office`,
+      toLocation: "Distributor warehouse",
+      quantity: 240,
+      value: Math.round(sku.mrp * 240 * 0.78),
+      expectedDate: office ? `${office.leadTimeDays} day lead time` : "Lead time not captured",
+      status: "Planned replenishment",
+      documentRef: "PO pending"
+    });
+  });
+
+  orders.slice(0, 8).forEach((order) => {
+    flows.push({
+      id: `order-${order.id}`,
+      brand: order.brand,
+      sku: order.sku,
+      skuCode: order.skuCode,
+      movementType: "Outbound sale",
+      fromLocation: "Distributor warehouse",
+      toLocation: order.outlet,
+      quantity: order.quantity,
+      value: order.expectedValue,
+      expectedDate: order.expectedDeliveryDate,
+      status: order.status,
+      documentRef: "Sales order"
+    });
+  });
+
+  bills.slice(0, 6).forEach((bill) => {
+    flows.push({
+      id: `bill-${bill.id}`,
+      brand: bill.brand,
+      sku: "Mixed invoice",
+      skuCode: bill.billNumber,
+      movementType: "Billed dispatch",
+      fromLocation: "Distributor billing desk",
+      toLocation: bill.outlet,
+      quantity: 1,
+      value: bill.totalAmount,
+      expectedDate: bill.billDate,
+      status: bill.paymentStatus,
+      documentRef: bill.billNumber
+    });
+  });
+
+  return flows;
+}
+
 export async function getCommandCenterData(): Promise<CommandCenterData> {
   const supabase = createSupabaseReadClient();
 
@@ -392,7 +521,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     metaIntegrationResult,
     aiProviderResult
   ] = await Promise.all([
-    supabase.from("brands").select("id,name,category,contact_person,status").order("created_at", { ascending: false }),
+    supabase.from("brands").select("id,name,category,contact_person,contact_email,contact_phone,status").order("created_at", { ascending: false }),
     supabase.from("users").select("id,name,email,phone,role,status").order("created_at", { ascending: false }),
     supabase
       .from("outlets")
@@ -458,6 +587,8 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     name: brand.name,
     category: brand.category ?? "Uncategorized",
     contact: brand.contact_person ?? "Internal ops",
+    contactEmail: brand.contact_email ?? "",
+    contactPhone: brand.contact_phone ?? "",
     status: displayBrandStatus(brand.status)
   }));
 
@@ -713,5 +844,8 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     updatedAt: typeof openAIConfig.updatedAt === "string" && openAIConfig.updatedAt ? openAIConfig.updatedAt : openAIDefaults.updatedAt
   };
 
-  return { records, users, brands, outlets, salesmen, skus, tasks, territories, payments, orders, bills, verificationDrafts, metaIntegration, aiProvider, openAIIntegration };
+  const procurementOffices = brands.flatMap(procurementOfficesForBrand);
+  const materialFlows = buildMaterialFlows(procurementOffices, skus, orders, bills);
+
+  return { records, users, brands, procurementOffices, materialFlows, outlets, salesmen, skus, tasks, territories, payments, orders, bills, verificationDrafts, metaIntegration, aiProvider, openAIIntegration };
 }
