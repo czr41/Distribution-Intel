@@ -1642,9 +1642,16 @@ function SalesRepPortal({
   const [notice, setNotice] = useState<IntegrationNotice | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [evidenceResult, setEvidenceResult] = useState<MediaLabResult | null>(null);
+  const [orderSearch, setOrderSearch] = useState("");
+  const [selectedOrderSkuId, setSelectedOrderSkuId] = useState(skus[0]?.id ?? "");
   const outletOptions = outlets.length ? outlets.map((outlet) => outlet.name) : ["Unassigned"];
   const brandOptions = brands.length ? brands.map((brand) => brand.name) : ["Unassigned"];
-  const skuOptions = skus.length ? skus.map(skuOption) : ["Unassigned"];
+  const selectedOrderSku = skus.find((sku) => sku.id === selectedOrderSkuId) ?? skus[0];
+  const filteredOrderSkus = skus.filter((sku) => {
+    const haystack = `${sku.name} ${sku.code} ${sku.brand} ${sku.category}`.toLowerCase();
+    return haystack.includes(orderSearch.trim().toLowerCase());
+  });
+  const visibleOrderSkus = orderSearch.trim() ? filteredOrderSkus : skus;
 
   async function submitVisit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1666,10 +1673,19 @@ function SalesRepPortal({
     event.preventDefault();
     const formElement = event.currentTarget;
     setNotice(null);
+    const selectedSku = selectedOrderSku ? skuOption(selectedOrderSku) : "";
+    if (!selectedSku) {
+      setNotice({ type: "error", message: "Select a product before capturing the order." });
+      return;
+    }
     setIsSubmitting(true);
     try {
-      await onCreateOrder(new FormData(formElement));
+      const form = new FormData(formElement);
+      form.set("sku", selectedSku);
+      await onCreateOrder(form);
       formElement.reset();
+      setSelectedOrderSkuId(skus[0]?.id ?? "");
+      setOrderSearch("");
       setNotice({ type: "success", message: "Order intent captured." });
     } catch (error) {
       setNotice({ type: "error", message: error instanceof Error ? error.message : "Order could not be captured." });
@@ -1775,11 +1791,67 @@ function SalesRepPortal({
               <form className="master-form" onSubmit={submitOrder}>
                 <div className="form-grid">
                   <Select name="outlet" label="Outlet" options={outletOptions} />
-                  <Select name="sku" label="Product / SKU" options={skuOptions} />
+                  <input type="hidden" name="sku" value={selectedOrderSku ? skuOption(selectedOrderSku) : ""} />
+                  <div className="form-field wide">
+                    <label htmlFor="sales-product-search">Find product</label>
+                    <input
+                      id="sales-product-search"
+                      type="search"
+                      value={orderSearch}
+                      onChange={(event) => setOrderSearch(event.target.value)}
+                      placeholder="Search by product, SKU, brand, or category"
+                    />
+                  </div>
+                  <div className="sales-product-picker wide" aria-label="Choose product">
+                    {visibleOrderSkus.slice(0, 8).map((sku) => (
+                      <button
+                        type="button"
+                        className={`sales-product-option ${selectedOrderSku?.id === sku.id ? "active" : ""}`}
+                        key={sku.id}
+                        onClick={() => setSelectedOrderSkuId(sku.id)}
+                      >
+                        <span className="sales-product-image">
+                          {sku.imageUrl ? (
+                            <img src={sku.imageUrl} alt="" loading="lazy" onError={(event) => { event.currentTarget.src = "/brand/nestle-logo.svg"; }} />
+                          ) : (
+                            <b>{productImageFallback(sku)}</b>
+                          )}
+                        </span>
+                        <span className="sales-product-copy">
+                          <strong>{sku.name}</strong>
+                          <small>{sku.brand} · {sku.unit}</small>
+                          <span>{sku.code || "No SKU code"}</span>
+                        </span>
+                        <em>{money(sku.mrp)}</em>
+                      </button>
+                    ))}
+                    {Boolean(skus.length && !visibleOrderSkus.length) && (
+                      <p className="empty-state">No product matches that search. Try the product name, SKU, brand, or category.</p>
+                    )}
+                    {!skus.length && <p className="empty-state">No products are available for order capture.</p>}
+                  </div>
                   <Input name="quantity" label="Quantity" type="number" placeholder="24" />
                   <Input name="unitPrice" label="Unit price" type="number" placeholder="Auto from MRP" required={false} />
                   <Input name="expectedValue" label="Order value" type="number" placeholder="Auto from quantity" required={false} />
                   <Input name="expectedDeliveryDate" label="Expected delivery" type="date" required={false} />
+                  <div className="quantity-chip-row wide" aria-label="Quick quantities">
+                    {[6, 12, 24, 48].map((quantity) => (
+                      <button type="button" className="link-button" key={quantity} onClick={(event) => {
+                        const form = event.currentTarget.form;
+                        const quantityInput = form?.elements.namedItem("quantity") as HTMLInputElement | null;
+                        if (quantityInput) quantityInput.value = String(quantity);
+                      }}>
+                        {quantity} units
+                      </button>
+                    ))}
+                  </div>
+                  {selectedOrderSku && (
+                    <div className="selected-order-summary wide">
+                      <span>Selected</span>
+                      <strong>{selectedOrderSku.name}</strong>
+                      <small>{selectedOrderSku.code || "No SKU code"} · {selectedOrderSku.brand} · {money(selectedOrderSku.mrp)}</small>
+                    </div>
+                  )}
                 </div>
                 <div className="action-row">
                   <button className="approve" disabled={isSubmitting} type="submit">Capture Order</button>
