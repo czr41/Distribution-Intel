@@ -120,6 +120,25 @@ create table if not exists outlet_brands (
   unique (outlet_id, brand_id)
 );
 
+create table if not exists brand_branches (
+  id uuid primary key default gen_random_uuid(),
+  brand_id uuid not null references brands(id) on delete cascade,
+  office_name text not null,
+  region text,
+  city text,
+  state text,
+  address text,
+  contact_person text,
+  contact_phone text,
+  contact_email text,
+  procurement_role text,
+  lead_time_days numeric not null default 0,
+  replenishment_mode text,
+  status text not null default 'primary',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists incoming_messages (
   id uuid primary key default gen_random_uuid(),
   provider text not null,
@@ -193,6 +212,74 @@ create table if not exists skus (
   mrp numeric,
   image_url text,
   status text not null default 'active'
+);
+
+create table if not exists purchase_orders (
+  id uuid primary key default gen_random_uuid(),
+  brand_id uuid references brands(id),
+  branch_id uuid references brand_branches(id),
+  po_number text,
+  order_date date not null default current_date,
+  expected_date date,
+  total_value numeric not null default 0,
+  status text not null default 'draft',
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists purchase_order_items (
+  id uuid primary key default gen_random_uuid(),
+  purchase_order_id uuid not null references purchase_orders(id) on delete cascade,
+  sku_id uuid references skus(id),
+  quantity numeric not null,
+  unit_cost numeric,
+  total_value numeric
+);
+
+create table if not exists goods_receipts (
+  id uuid primary key default gen_random_uuid(),
+  purchase_order_id uuid references purchase_orders(id),
+  receipt_number text,
+  received_date date not null default current_date,
+  warehouse text not null default 'Distributor warehouse',
+  status text not null default 'received',
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists inventory_movements (
+  id uuid primary key default gen_random_uuid(),
+  brand_id uuid references brands(id),
+  sku_id uuid references skus(id),
+  branch_id uuid references brand_branches(id),
+  purchase_order_id uuid references purchase_orders(id),
+  goods_receipt_id uuid references goods_receipts(id),
+  movement_type text not null default 'inbound_procurement',
+  from_location text,
+  to_location text,
+  quantity numeric not null default 0,
+  movement_value numeric not null default 0,
+  expected_date date,
+  status text not null default 'open',
+  document_ref text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists supplier_payables (
+  id uuid primary key default gen_random_uuid(),
+  brand_id uuid references brands(id),
+  branch_id uuid references brand_branches(id),
+  purchase_order_id uuid references purchase_orders(id),
+  invoice_number text,
+  invoice_date date,
+  amount_due numeric not null default 0,
+  amount_paid numeric not null default 0,
+  due_date date,
+  status text not null default 'due',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists orders (
@@ -400,6 +487,19 @@ begin
 
   if to_regclass('public.outlets') is not null then
     create index if not exists idx_outlets_city_status on outlets(city, status);
+  end if;
+
+  if to_regclass('public.brand_branches') is not null then
+    create index if not exists idx_brand_branches_brand_status on brand_branches(brand_id, status);
+  end if;
+
+  if to_regclass('public.purchase_orders') is not null then
+    create index if not exists idx_purchase_orders_brand_status on purchase_orders(brand_id, status);
+  end if;
+
+  if to_regclass('public.inventory_movements') is not null then
+    create index if not exists idx_inventory_movements_sku_type on inventory_movements(sku_id, movement_type);
+    create index if not exists idx_inventory_movements_brand_date on inventory_movements(brand_id, created_at desc);
   end if;
 
   if to_regclass('public.orders') is not null then

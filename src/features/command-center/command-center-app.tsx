@@ -9,6 +9,7 @@ import type {
   BrandOption,
   CommandCenterData,
   CommandRecord,
+  InventoryPositionRow,
   MaterialFlowRow,
   MetaIntegrationSettings,
   OpenAIIntegrationSettings,
@@ -16,6 +17,7 @@ import type {
   OutletRow,
   PaymentRow,
   ProcurementOffice,
+  PurchaseOrderRow,
   SalesmanRow,
   SkuRow,
   TaskRow,
@@ -57,13 +59,15 @@ type MediaLabResult = {
   };
   warning?: string;
 };
-type ModalType = "outlet" | "brand" | "sku" | "salesman" | "user" | "task" | "territory" | "payment" | "order" | "bill" | null;
+type ModalType = "outlet" | "brand" | "procurementOffice" | "materialFlow" | "sku" | "salesman" | "user" | "task" | "territory" | "payment" | "order" | "bill" | null;
 type BulkImportType = Exclude<ModalType, null>;
 type IntegrationNotice = { type: "success" | "error"; message: string };
 type SalesWorkflow = "visit" | "order" | "payment" | "evidence";
 type EditableMasterData =
   | { type: "outlet"; record: OutletRow }
   | { type: "brand"; record: BrandOption }
+  | { type: "procurementOffice"; record: ProcurementOffice }
+  | { type: "materialFlow"; record: MaterialFlowRow }
   | { type: "sku"; record: SkuRow }
   | { type: "salesman"; record: SalesmanRow }
   | { type: "user"; record: AppUserRow }
@@ -74,6 +78,8 @@ type EditableMasterData =
   | { type: "bill"; record: BillRow };
 type CommandCenterActions = {
   createBrand: (formData: FormData) => Promise<BrandOption>;
+  createProcurementOffice: (formData: FormData) => Promise<ProcurementOffice>;
+  createMaterialFlow: (formData: FormData) => Promise<MaterialFlowRow>;
   createSku: (formData: FormData) => Promise<SkuRow>;
   createOutlet: (formData: FormData) => Promise<OutletRow>;
   createSalesman: (formData: FormData) => Promise<SalesmanRow>;
@@ -84,6 +90,8 @@ type CommandCenterActions = {
   createOrder: (formData: FormData) => Promise<OrderRow>;
   createBill: (formData: FormData) => Promise<BillRow>;
   updateBrand: (formData: FormData) => Promise<BrandOption>;
+  updateProcurementOffice: (formData: FormData) => Promise<ProcurementOffice>;
+  updateMaterialFlow: (formData: FormData) => Promise<MaterialFlowRow>;
   updateSku: (formData: FormData) => Promise<SkuRow>;
   updateOutlet: (formData: FormData) => Promise<OutletRow>;
   updateSalesman: (formData: FormData) => Promise<SalesmanRow>;
@@ -142,6 +150,18 @@ const bulkTemplates: Record<BulkImportType, { title: string; filename: string; c
     filename: "shipd2r-client-import-template.csv",
     columns: ["name", "category", "contact", "contactEmail", "contactPhone", "status"],
     sample: ["Nestle", "FMCG foods and beverages", "Regional procurement desk", "south.procurement@nestle.example", "08040002200", "Active"]
+  },
+  procurementOffice: {
+    title: "Client Branch / Source Office Bulk Import",
+    filename: "shipd2r-client-branch-import-template.csv",
+    columns: ["brand", "officeName", "region", "city", "state", "contact", "phone", "email", "procurementRole", "leadTimeDays", "replenishmentMode", "status"],
+    sample: ["Nestle", "Nestle South Regional HQ", "South India", "Bengaluru", "Karnataka", "Regional procurement desk", "08040002200", "south.procurement@nestle.example", "Primary procurement and stock allocation", "3", "Regional PO, GRN, invoice-backed dispatch", "Primary"]
+  },
+  materialFlow: {
+    title: "Material Movement Bulk Import",
+    filename: "shipd2r-material-flow-import-template.csv",
+    columns: ["brand", "sku", "movementType", "fromLocation", "toLocation", "quantity", "value", "expectedDate", "status", "documentRef"],
+    sample: ["Nestle", "Maggi 2-Minute Masala Noodles 70g (NES-MAGGI-70)", "Inbound procurement", "Nestle South Regional HQ", "Distributor warehouse", "240", "2808", "2026-06-07", "PO confirmed", "PO-NES-1001"]
   },
   sku: {
     title: "Product / SKU Bulk Import",
@@ -213,6 +233,38 @@ function brandLogo(brand: BrandOption) {
 
 function productImageFallback(sku: SkuRow) {
   return `${sku.name.slice(0, 1)}${sku.brand.slice(0, 1)}`.toUpperCase();
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function inventoryFromFlows(skus: SkuRow[], flows: MaterialFlowRow[]): InventoryPositionRow[] {
+  return skus.map((sku) => {
+    const skuFlows = flows.filter((flow) => flow.skuCode === sku.code || flow.sku === sku.name);
+    const inbound = skuFlows.filter((flow) => flow.movementType === "Inbound procurement").reduce((sum, flow) => sum + flow.quantity, 0);
+    const outbound = skuFlows.filter((flow) => flow.movementType === "Outbound sale" || flow.movementType === "Billed dispatch").reduce((sum, flow) => sum + flow.quantity, 0);
+    const damaged = skuFlows.filter((flow) => flow.movementType === "Return / hold").reduce((sum, flow) => sum + flow.quantity, 0);
+    const onHand = Math.max(inbound - outbound, 0);
+    const reserved = Math.min(outbound, onHand);
+    const available = Math.max(onHand - reserved - damaged, 0);
+    const reorderLevel = 48;
+    const status: InventoryPositionRow["status"] = available <= 0 || available < reorderLevel ? "Reorder due" : available < reorderLevel * 2 ? "Low stock" : "Healthy";
+    return {
+      id: `inventory-${sku.id}`,
+      brand: sku.brand,
+      sku: sku.name,
+      skuCode: sku.code,
+      onHand,
+      reserved,
+      available,
+      inbound,
+      damaged,
+      reorderLevel,
+      warehouse: "Distributor warehouse",
+      status
+    };
+  });
 }
 
 function confidenceLabel(record: CommandRecord) {
@@ -314,6 +366,10 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const [records, setRecords] = useState<CommandRecord[]>(initialData.records);
   const [users, setUsers] = useState<AppUserRow[]>(initialData.users);
   const [brands, setBrands] = useState<BrandOption[]>(initialData.brands);
+  const [procurementOffices, setProcurementOffices] = useState<ProcurementOffice[]>(initialData.procurementOffices);
+  const [materialFlows, setMaterialFlows] = useState<MaterialFlowRow[]>(initialData.materialFlows);
+  const [inventoryPositions, setInventoryPositions] = useState<InventoryPositionRow[]>(initialData.inventoryPositions);
+  const [purchaseOrders] = useState<PurchaseOrderRow[]>(initialData.purchaseOrders);
   const [outlets, setOutlets] = useState<OutletRow[]>(initialData.outlets);
   const [salesmen, setSalesmen] = useState<SalesmanRow[]>(initialData.salesmen);
   const [skus, setSkus] = useState<SkuRow[]>(initialData.skus);
@@ -581,6 +637,22 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       setActiveView("partners");
     }
 
+    if (modalType === "procurementOffice") {
+      const saved = isEditing ? await actions.updateProcurementOffice(form) : await actions.createProcurementOffice(form);
+      setProcurementOffices((current) => (isEditing ? current.map((office) => (office.id === saved.id ? saved : office)) : [saved, ...current]));
+      setActiveView("procurement");
+    }
+
+    if (modalType === "materialFlow") {
+      const saved = isEditing ? await actions.updateMaterialFlow(form) : await actions.createMaterialFlow(form);
+      setMaterialFlows((current) => {
+        const next = isEditing ? current.map((flow) => (flow.id === saved.id ? saved : flow)) : [saved, ...current];
+        setInventoryPositions(inventoryFromFlows(skus, next));
+        return next;
+      });
+      setActiveView("procurement");
+    }
+
     if (modalType === "sku") {
       const saved = isEditing ? await actions.updateSku(form) : await actions.createSku(form);
       setSkus((current) => (isEditing ? current.map((sku) => (sku.id === saved.id ? saved : sku)) : [saved, ...current]));
@@ -754,6 +826,32 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       }
       setBrands((current) => [...savedRows, ...current]);
       setActiveView("partners");
+    }
+
+    if (type === "procurementOffice") {
+      const savedRows: ProcurementOffice[] = [];
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.procurementOffice.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Primary" : row[column] ?? ""));
+        savedRows.push(await actions.createProcurementOffice(form));
+      }
+      setProcurementOffices((current) => [...savedRows, ...current]);
+      setActiveView("procurement");
+    }
+
+    if (type === "materialFlow") {
+      const savedRows: MaterialFlowRow[] = [];
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.materialFlow.columns.forEach((column) => form.set(column, row[column] ?? ""));
+        savedRows.push(await actions.createMaterialFlow(form));
+      }
+      setMaterialFlows((current) => {
+        const next = [...savedRows, ...current];
+        setInventoryPositions(inventoryFromFlows(skus, next));
+        return next;
+      });
+      setActiveView("procurement");
     }
 
     if (type === "sku") {
@@ -949,7 +1047,8 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     ],
     procurement: [
       { label: "Add Client", action: () => openCreate("brand") },
-      { label: "Add Product", action: () => openCreate("sku") }
+      { label: "Add Branch", action: () => openCreate("procurementOffice") },
+      { label: "Add Movement", action: () => openCreate("materialFlow") }
     ],
     tasks: [
       { label: "Create Task", action: () => openCreate("task") },
@@ -1109,9 +1208,26 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         {activeView === "media" && <MediaLabView aiProvider={aiProvider} />}
         {activeView === "outlets" && <OutletsView outlets={outlets} onAdd={() => openCreate("outlet")} onEdit={(outlet) => openEdit({ type: "outlet", record: outlet })} onBulkImport={() => openBulkImport("outlet")} />}
         {activeView === "products" && <ProductsView skus={skus} onAdd={() => openCreate("sku")} onEdit={(sku) => openEdit({ type: "sku", record: sku })} onBulkImport={() => openBulkImport("sku")} />}
-        {activeView === "procurement" && <ProcurementFlowView brands={brands} procurementOffices={initialData.procurementOffices} materialFlows={initialData.materialFlows} skus={skus} orders={orders} bills={bills} />}
+        {activeView === "procurement" && (
+          <ProcurementFlowView
+            brands={brands}
+            procurementOffices={procurementOffices}
+            materialFlows={materialFlows}
+            inventoryPositions={inventoryPositions}
+            purchaseOrders={purchaseOrders}
+            skus={skus}
+            orders={orders}
+            bills={bills}
+            onAddOffice={() => openCreate("procurementOffice")}
+            onEditOffice={(office) => openEdit({ type: "procurementOffice", record: office })}
+            onAddMovement={() => openCreate("materialFlow")}
+            onEditMovement={(flow) => openEdit({ type: "materialFlow", record: flow })}
+            onBulkImportOffice={() => openBulkImport("procurementOffice")}
+            onBulkImportMovement={() => openBulkImport("materialFlow")}
+          />
+        )}
         {activeView === "partners" && (
-          <PartnersView brands={brands} procurementOffices={initialData.procurementOffices} skus={skus} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onAddSku={() => openCreate("sku")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onBulkImport={() => openBulkImport("brand")} />
+          <PartnersView brands={brands} procurementOffices={procurementOffices} skus={skus} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onAddSku={() => openCreate("sku")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onBulkImport={() => openBulkImport("brand")} />
         )}
         {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => openCreate("salesman")} onEdit={(person) => openEdit({ type: "salesman", record: person })} onBulkImport={() => openBulkImport("salesman")} />}
         {activeView === "users" && <UsersView users={users} onAdd={() => openCreate("user")} onEdit={(user) => openEdit({ type: "user", record: user })} onBulkImport={() => openBulkImport("user")} />}
@@ -2372,16 +2488,32 @@ function ProcurementFlowView({
   brands,
   procurementOffices,
   materialFlows,
+  inventoryPositions,
+  purchaseOrders,
   skus,
   orders,
-  bills
+  bills,
+  onAddOffice,
+  onEditOffice,
+  onAddMovement,
+  onEditMovement,
+  onBulkImportOffice,
+  onBulkImportMovement
 }: {
   brands: BrandOption[];
   procurementOffices: ProcurementOffice[];
   materialFlows: MaterialFlowRow[];
+  inventoryPositions: InventoryPositionRow[];
+  purchaseOrders: PurchaseOrderRow[];
   skus: SkuRow[];
   orders: OrderRow[];
   bills: BillRow[];
+  onAddOffice: () => void;
+  onEditOffice: (office: ProcurementOffice) => void;
+  onAddMovement: () => void;
+  onEditMovement: (flow: MaterialFlowRow) => void;
+  onBulkImportOffice: () => void;
+  onBulkImportMovement: () => void;
 }) {
   const inboundFlows = materialFlows.filter((flow) => flow.movementType === "Inbound procurement");
   const outboundFlows = materialFlows.filter((flow) => flow.movementType !== "Inbound procurement");
@@ -2396,6 +2528,12 @@ function ProcurementFlowView({
             <p className="eyebrow">Material movement model</p>
             <h2>Procurement to Distributor to Outlet</h2>
             <p>Track where each brand is procured from, how stock reaches the distributor, and how it moves out through orders and billed dispatches.</p>
+          </div>
+          <div className="panel-actions">
+            <button className="secondary-button" onClick={onBulkImportOffice}>Import Branches</button>
+            <button className="secondary-button" onClick={onBulkImportMovement}>Import Movement</button>
+            <button className="primary-button" onClick={onAddOffice}>Add Branch</button>
+            <button className="primary-button" onClick={onAddMovement}>Add Movement</button>
           </div>
         </div>
         <div className="procurement-flow-map">
@@ -2423,7 +2561,7 @@ function ProcurementFlowView({
         <Metric label="Procurement offices" value={procurementOffices.length} detail="Regional HQs and alternate sources" />
         <Metric label="Inbound value" value={money(totalInboundValue)} detail="Planned distributor replenishment" />
         <Metric label="Outbound value" value={money(totalOutboundValue)} detail="Orders and billed dispatches" />
-        <Metric label="Active brands" value={brands.filter((brand) => brand.status === "Active").length} detail="Clients with procurement mapping" />
+        <Metric label="Reorder alerts" value={inventoryPositions.filter((item) => item.status === "Reorder due").length} detail="SKUs below reorder threshold" />
       </section>
 
       <section className="procurement-grid">
@@ -2442,7 +2580,10 @@ function ProcurementFlowView({
                     <strong>{office.officeName}</strong>
                     <p>{office.brand} · {office.region}</p>
                   </div>
-                  <span className={`tag ${office.status === "Primary" ? "green" : ""}`}>{office.status}</span>
+                  <div className="record-meta">
+                    <span className={`tag ${office.status === "Primary" ? "green" : ""}`}>{office.status}</span>
+                    {isUuid(office.id) && <button className="link-button" onClick={() => onEditOffice(office)}>Edit</button>}
+                  </div>
                 </div>
                 <div className="field-grid">
                   <Field label="Location" value={`${office.city}, ${office.state}`} />
@@ -2453,6 +2594,7 @@ function ProcurementFlowView({
                 <p>{office.procurementRole}</p>
               </article>
             ))}
+            {!procurementOffices.length && <p className="empty-state">Add client branches or regional procurement offices to start sourcing from brands.</p>}
           </div>
         </article>
 
@@ -2479,9 +2621,69 @@ function ProcurementFlowView({
                 <div className="flow-value">
                   <strong>{money(flow.value)}</strong>
                   <small>{flow.quantity} units · {flow.status}</small>
+                  {isUuid(flow.id) && <button className="link-button" onClick={() => onEditMovement(flow)}>Edit</button>}
                 </div>
               </article>
             ))}
+            {!materialFlows.length && <p className="empty-state">Add inbound procurement, outbound sale, billed dispatch, or return movements.</p>}
+          </div>
+        </article>
+      </section>
+
+      <section className="procurement-grid">
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Inventory Position</h2>
+              <p>Stock calculated from inbound, outbound, billed dispatch, and hold movements.</p>
+            </div>
+          </div>
+          <div className="inventory-list">
+            {inventoryPositions.map((item) => (
+              <article className="inventory-row" key={item.id}>
+                <div>
+                  <strong>{item.sku}</strong>
+                  <small>{item.brand}{item.skuCode ? ` · ${item.skuCode}` : ""}</small>
+                </div>
+                <div className="inventory-metrics">
+                  <Field label="Available" value={item.available} />
+                  <Field label="Reserved" value={item.reserved} />
+                  <Field label="Inbound" value={item.inbound} />
+                  <Field label="Damaged / hold" value={item.damaged} />
+                </div>
+                <span className={`tag ${item.status === "Healthy" ? "green" : "warn"}`}>{item.status}</span>
+              </article>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Purchase Order Summary</h2>
+              <p>Supplier-side procurement commitments linked to brand branches and source offices.</p>
+            </div>
+          </div>
+          <div className="material-flow-list">
+            {purchaseOrders.map((purchaseOrder) => (
+              <article className="material-flow-row" key={purchaseOrder.id}>
+                <div>
+                  <span className="tag blue">{purchaseOrder.status}</span>
+                  <strong>{purchaseOrder.poNumber}</strong>
+                  <small>{purchaseOrder.brand} · {purchaseOrder.officeName}</small>
+                </div>
+                <div className="flow-route">
+                  <span>{purchaseOrder.officeName}</span>
+                  <b>→</b>
+                  <span>Distributor warehouse</span>
+                </div>
+                <div className="flow-value">
+                  <strong>{money(purchaseOrder.totalValue)}</strong>
+                  <small>{purchaseOrder.expectedDate}</small>
+                </div>
+              </article>
+            ))}
+            {!purchaseOrders.length && <p className="empty-state">Purchase order rows will appear after the procurement schema is seeded or imported.</p>}
           </div>
         </article>
       </section>
@@ -3252,7 +3454,7 @@ function MasterDataModal({
   territories: TerritoryRow[];
   salesmen: SalesmanRow[];
   users: AppUserRow[];
-  initialValues?: OutletRow | BrandOption | SkuRow | SalesmanRow | AppUserRow | TaskRow | TerritoryRow | PaymentRow | OrderRow | BillRow;
+  initialValues?: OutletRow | BrandOption | ProcurementOffice | MaterialFlowRow | SkuRow | SalesmanRow | AppUserRow | TaskRow | TerritoryRow | PaymentRow | OrderRow | BillRow;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -3260,6 +3462,10 @@ function MasterDataModal({
   const noun =
     type === "brand"
       ? "Brand Client"
+      : type === "procurementOffice"
+        ? "Client Branch / Source Office"
+        : type === "materialFlow"
+          ? "Material Movement"
       : type === "sku"
         ? "Product / SKU"
       : type === "salesman"
@@ -3286,6 +3492,8 @@ function MasterDataModal({
   const assigneeOptions = ["Unassigned", ...users.filter((user) => user.role !== "brand_partner_viewer" && user.role !== "brand_partner_manager").map((user) => user.name)];
   const outletValues = type === "outlet" ? (initialValues as OutletRow | undefined) : undefined;
   const brandValues = type === "brand" ? (initialValues as BrandOption | undefined) : undefined;
+  const procurementOfficeValues = type === "procurementOffice" ? (initialValues as ProcurementOffice | undefined) : undefined;
+  const materialFlowValues = type === "materialFlow" ? (initialValues as MaterialFlowRow | undefined) : undefined;
   const skuValues = type === "sku" ? (initialValues as SkuRow | undefined) : undefined;
   const salesmanValues = type === "salesman" ? (initialValues as SalesmanRow | undefined) : undefined;
   const userValues = type === "user" ? (initialValues as AppUserRow | undefined) : undefined;
@@ -3329,6 +3537,36 @@ function MasterDataModal({
                 <Input name="contactEmail" label="Procurement email" type="email" required={false} defaultValue={brandValues?.contactEmail} />
                 <Input name="contactPhone" label="Procurement phone" required={false} defaultValue={brandValues?.contactPhone} />
                 <Select name="status" label="Status" options={["Active", "Inactive"]} defaultValue={brandValues?.status} />
+              </>
+            )}
+            {type === "procurementOffice" && (
+              <>
+                <Select name="brand" label="Brand client" options={brandOptions} defaultValue={procurementOfficeValues?.brand} />
+                <Input name="officeName" label="Branch / source office" defaultValue={procurementOfficeValues?.officeName} />
+                <Input name="region" label="Region" defaultValue={procurementOfficeValues?.region} />
+                <Input name="city" label="City" defaultValue={procurementOfficeValues?.city} />
+                <Input name="state" label="State" defaultValue={procurementOfficeValues?.state} />
+                <Input name="contact" label="Procurement contact" defaultValue={procurementOfficeValues?.contact} />
+                <Input name="phone" label="Phone" required={false} defaultValue={procurementOfficeValues?.phone} />
+                <Input name="email" label="Email" type="email" required={false} defaultValue={procurementOfficeValues?.email} />
+                <Input name="procurementRole" label="Role / responsibility" defaultValue={procurementOfficeValues?.procurementRole} />
+                <Input name="leadTimeDays" label="Lead time days" type="number" required={false} defaultValue={procurementOfficeValues ? String(procurementOfficeValues.leadTimeDays) : undefined} />
+                <Input name="replenishmentMode" label="Replenishment mode" defaultValue={procurementOfficeValues?.replenishmentMode} />
+                <Select name="status" label="Status" options={["Primary", "Alternate", "Inactive"]} defaultValue={procurementOfficeValues?.status} />
+              </>
+            )}
+            {type === "materialFlow" && (
+              <>
+                <Select name="brand" label="Brand client" options={brandOptions} defaultValue={materialFlowValues?.brand} />
+                <Select name="sku" label="Product / SKU" options={skuOptions} defaultValue={materialFlowValues?.sku ? (materialFlowValues.skuCode ? `${materialFlowValues.sku} (${materialFlowValues.skuCode})` : materialFlowValues.sku) : undefined} />
+                <Select name="movementType" label="Movement type" options={["Inbound procurement", "Outbound sale", "Billed dispatch", "Return / hold"]} defaultValue={materialFlowValues?.movementType} />
+                <Input name="fromLocation" label="From" defaultValue={materialFlowValues?.fromLocation} />
+                <Input name="toLocation" label="To" defaultValue={materialFlowValues?.toLocation} />
+                <Input name="quantity" label="Quantity" type="number" defaultValue={materialFlowValues ? String(materialFlowValues.quantity) : undefined} />
+                <Input name="value" label="Value" type="number" required={false} defaultValue={materialFlowValues ? String(materialFlowValues.value) : undefined} />
+                <Input name="expectedDate" label="Expected / document date" type="date" required={false} defaultValue={materialFlowValues?.expectedDate === "No expected date" ? "" : materialFlowValues?.expectedDate} />
+                <Input name="status" label="Movement status" defaultValue={materialFlowValues?.status} />
+                <Input name="documentRef" label="Document reference" required={false} defaultValue={materialFlowValues?.documentRef} />
               </>
             )}
             {type === "sku" && (

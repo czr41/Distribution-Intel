@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { AppUserRow, BillRow, BrandOption, OrderRow, OutletRow, PaymentRow, SalesmanRow, SkuRow, TaskRow, TerritoryRow, VerificationDraftRecord } from "./types";
+import type { AppUserRow, BillRow, BrandOption, MaterialFlowRow, OrderRow, OutletRow, PaymentRow, ProcurementOffice, SalesmanRow, SkuRow, TaskRow, TerritoryRow, VerificationDraftRecord } from "./types";
 
 const statusMap = {
   Active: "active",
@@ -18,6 +18,34 @@ const brandSchema = z.object({
   contactEmail: z.string().email().optional().or(z.literal("")),
   contactPhone: z.string().optional(),
   status: z.enum(["Active", "Inactive"])
+});
+
+const procurementOfficeSchema = z.object({
+  brand: z.string().min(1),
+  officeName: z.string().min(1),
+  region: z.string().min(1),
+  city: z.string().min(1),
+  state: z.string().min(1),
+  contact: z.string().min(1),
+  phone: z.string().optional(),
+  email: z.string().email().optional().or(z.literal("")),
+  procurementRole: z.string().min(1),
+  leadTimeDays: z.string().optional(),
+  replenishmentMode: z.string().min(1),
+  status: z.enum(["Primary", "Alternate", "Inactive"])
+});
+
+const materialFlowSchema = z.object({
+  brand: z.string().min(1),
+  sku: z.string().min(1),
+  movementType: z.enum(["Inbound procurement", "Outbound sale", "Billed dispatch", "Return / hold"]),
+  fromLocation: z.string().min(1),
+  toLocation: z.string().min(1),
+  quantity: z.string().min(1),
+  value: z.string().optional(),
+  expectedDate: z.string().optional(),
+  status: z.string().min(1),
+  documentRef: z.string().optional()
 });
 
 const outletSchema = z.object({
@@ -226,6 +254,32 @@ function objectJson(value: unknown): Record<string, unknown> {
 
 function brandStatus(status?: string | null): BrandOption["status"] {
   return status === "inactive" ? "Inactive" : "Active";
+}
+
+function procurementOfficeStatus(status?: string | null): ProcurementOffice["status"] {
+  if (status === "alternate") return "Alternate";
+  if (status === "inactive") return "Inactive";
+  return "Primary";
+}
+
+function procurementOfficeDbStatus(status: ProcurementOffice["status"]) {
+  if (status === "Alternate") return "alternate";
+  if (status === "Inactive") return "inactive";
+  return "primary";
+}
+
+function materialMovementDbType(type: MaterialFlowRow["movementType"]) {
+  if (type === "Outbound sale") return "outbound_sale";
+  if (type === "Billed dispatch") return "billed_dispatch";
+  if (type === "Return / hold") return "return_hold";
+  return "inbound_procurement";
+}
+
+function materialMovementType(type?: string | null): MaterialFlowRow["movementType"] {
+  if (type === "outbound_sale") return "Outbound sale";
+  if (type === "billed_dispatch") return "Billed dispatch";
+  if (type === "return_hold") return "Return / hold";
+  return "Inbound procurement";
 }
 
 function outletStatus(status?: string | null): OutletRow["status"] {
@@ -556,6 +610,123 @@ export async function updateBrandAction(formData: FormData): Promise<BrandOption
     contactEmail: data.contact_email ?? "",
     contactPhone: data.contact_phone ?? "",
     status: brandStatus(data.status)
+  };
+}
+
+export async function createProcurementOfficeAction(formData: FormData): Promise<ProcurementOffice> {
+  const input = procurementOfficeSchema.parse({
+    brand: formValue(formData, "brand"),
+    officeName: formValue(formData, "officeName"),
+    region: formValue(formData, "region"),
+    city: formValue(formData, "city"),
+    state: formValue(formData, "state"),
+    contact: formValue(formData, "contact"),
+    phone: formValue(formData, "phone"),
+    email: formValue(formData, "email"),
+    procurementRole: formValue(formData, "procurementRole"),
+    leadTimeDays: formValue(formData, "leadTimeDays"),
+    replenishmentMode: formValue(formData, "replenishmentMode"),
+    status: formValue(formData, "status")
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const brandId = await findBrandIdByName(supabase, input.brand);
+  if (!brandId) throw new Error("Choose a valid brand client before adding a procurement office.");
+  const { data, error } = await supabase
+    .from("brand_branches")
+    .insert({
+      brand_id: brandId,
+      office_name: input.officeName,
+      region: input.region,
+      city: input.city,
+      state: input.state,
+      contact_person: input.contact,
+      contact_phone: input.phone || null,
+      contact_email: input.email || null,
+      procurement_role: input.procurementRole,
+      lead_time_days: input.leadTimeDays ? numberInput(input.leadTimeDays) : 0,
+      replenishment_mode: input.replenishmentMode,
+      status: procurementOfficeDbStatus(input.status)
+    })
+    .select("id,office_name,region,city,state,contact_person,contact_phone,contact_email,procurement_role,lead_time_days,replenishment_mode,status")
+    .single();
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return {
+    id: data.id,
+    brand: input.brand,
+    officeName: data.office_name,
+    region: data.region ?? "Unassigned",
+    city: data.city ?? "Unassigned",
+    state: data.state ?? "Unassigned",
+    contact: data.contact_person ?? "Unassigned",
+    phone: data.contact_phone ?? "",
+    email: data.contact_email ?? "",
+    procurementRole: data.procurement_role ?? "Distributor procurement",
+    leadTimeDays: numberValue(data.lead_time_days),
+    replenishmentMode: data.replenishment_mode ?? "Purchase order",
+    status: procurementOfficeStatus(data.status)
+  };
+}
+
+export async function updateProcurementOfficeAction(formData: FormData): Promise<ProcurementOffice> {
+  const id = formId(formData);
+  const input = procurementOfficeSchema.parse({
+    brand: formValue(formData, "brand"),
+    officeName: formValue(formData, "officeName"),
+    region: formValue(formData, "region"),
+    city: formValue(formData, "city"),
+    state: formValue(formData, "state"),
+    contact: formValue(formData, "contact"),
+    phone: formValue(formData, "phone"),
+    email: formValue(formData, "email"),
+    procurementRole: formValue(formData, "procurementRole"),
+    leadTimeDays: formValue(formData, "leadTimeDays"),
+    replenishmentMode: formValue(formData, "replenishmentMode"),
+    status: formValue(formData, "status")
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const brandId = await findBrandIdByName(supabase, input.brand);
+  if (!brandId) throw new Error("Choose a valid brand client before updating a procurement office.");
+  const { data, error } = await supabase
+    .from("brand_branches")
+    .update({
+      brand_id: brandId,
+      office_name: input.officeName,
+      region: input.region,
+      city: input.city,
+      state: input.state,
+      contact_person: input.contact,
+      contact_phone: input.phone || null,
+      contact_email: input.email || null,
+      procurement_role: input.procurementRole,
+      lead_time_days: input.leadTimeDays ? numberInput(input.leadTimeDays) : 0,
+      replenishment_mode: input.replenishmentMode,
+      status: procurementOfficeDbStatus(input.status),
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", id)
+    .select("id,office_name,region,city,state,contact_person,contact_phone,contact_email,procurement_role,lead_time_days,replenishment_mode,status")
+    .single();
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return {
+    id: data.id,
+    brand: input.brand,
+    officeName: data.office_name,
+    region: data.region ?? "Unassigned",
+    city: data.city ?? "Unassigned",
+    state: data.state ?? "Unassigned",
+    contact: data.contact_person ?? "Unassigned",
+    phone: data.contact_phone ?? "",
+    email: data.contact_email ?? "",
+    procurementRole: data.procurement_role ?? "Distributor procurement",
+    leadTimeDays: numberValue(data.lead_time_days),
+    replenishmentMode: data.replenishment_mode ?? "Purchase order",
+    status: procurementOfficeStatus(data.status)
   };
 }
 
@@ -1381,6 +1552,117 @@ export async function updateOrderAction(formData: FormData): Promise<OrderRow> {
     expectedValue: Number(data.expected_value ?? 0),
     expectedDeliveryDate: data.expected_delivery_date ?? "No delivery date",
     status: orderStatus(data.status)
+  };
+}
+
+export async function createMaterialFlowAction(formData: FormData): Promise<MaterialFlowRow> {
+  const input = materialFlowSchema.parse({
+    brand: formValue(formData, "brand"),
+    sku: formValue(formData, "sku"),
+    movementType: formValue(formData, "movementType"),
+    fromLocation: formValue(formData, "fromLocation"),
+    toLocation: formValue(formData, "toLocation"),
+    quantity: formValue(formData, "quantity"),
+    value: formValue(formData, "value"),
+    expectedDate: formValue(formData, "expectedDate"),
+    status: formValue(formData, "status"),
+    documentRef: formValue(formData, "documentRef")
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const [brandId, sku] = await Promise.all([findBrandIdByName(supabase, input.brand), findSkuForOrder(supabase, input.sku)]);
+  if (!brandId) throw new Error("Choose a valid brand client before adding material movement.");
+  const quantity = numberInput(input.quantity);
+  const value = input.value ? numberInput(input.value) : quantity * (sku?.mrp ?? 0);
+  const { data, error } = await supabase
+    .from("inventory_movements")
+    .insert({
+      brand_id: brandId,
+      sku_id: sku?.id ?? null,
+      movement_type: materialMovementDbType(input.movementType),
+      from_location: input.fromLocation,
+      to_location: input.toLocation,
+      quantity,
+      movement_value: value,
+      expected_date: input.expectedDate || null,
+      status: input.status,
+      document_ref: input.documentRef || null
+    })
+    .select("id,movement_type,from_location,to_location,quantity,movement_value,expected_date,status,document_ref")
+    .single();
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return {
+    id: data.id,
+    brand: input.brand,
+    sku: sku?.name ?? input.sku,
+    skuCode: sku?.code ?? "",
+    movementType: materialMovementType(data.movement_type),
+    fromLocation: data.from_location ?? "",
+    toLocation: data.to_location ?? "",
+    quantity: numberValue(data.quantity),
+    value: numberValue(data.movement_value),
+    expectedDate: data.expected_date ?? "No expected date",
+    status: data.status ?? "Open",
+    documentRef: data.document_ref ?? ""
+  };
+}
+
+export async function updateMaterialFlowAction(formData: FormData): Promise<MaterialFlowRow> {
+  const id = formId(formData);
+  const input = materialFlowSchema.parse({
+    brand: formValue(formData, "brand"),
+    sku: formValue(formData, "sku"),
+    movementType: formValue(formData, "movementType"),
+    fromLocation: formValue(formData, "fromLocation"),
+    toLocation: formValue(formData, "toLocation"),
+    quantity: formValue(formData, "quantity"),
+    value: formValue(formData, "value"),
+    expectedDate: formValue(formData, "expectedDate"),
+    status: formValue(formData, "status"),
+    documentRef: formValue(formData, "documentRef")
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const [brandId, sku] = await Promise.all([findBrandIdByName(supabase, input.brand), findSkuForOrder(supabase, input.sku)]);
+  if (!brandId) throw new Error("Choose a valid brand client before updating material movement.");
+  const quantity = numberInput(input.quantity);
+  const value = input.value ? numberInput(input.value) : quantity * (sku?.mrp ?? 0);
+  const { data, error } = await supabase
+    .from("inventory_movements")
+    .update({
+      brand_id: brandId,
+      sku_id: sku?.id ?? null,
+      movement_type: materialMovementDbType(input.movementType),
+      from_location: input.fromLocation,
+      to_location: input.toLocation,
+      quantity,
+      movement_value: value,
+      expected_date: input.expectedDate || null,
+      status: input.status,
+      document_ref: input.documentRef || null,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", id)
+    .select("id,movement_type,from_location,to_location,quantity,movement_value,expected_date,status,document_ref")
+    .single();
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return {
+    id: data.id,
+    brand: input.brand,
+    sku: sku?.name ?? input.sku,
+    skuCode: sku?.code ?? "",
+    movementType: materialMovementType(data.movement_type),
+    fromLocation: data.from_location ?? "",
+    toLocation: data.to_location ?? "",
+    quantity: numberValue(data.quantity),
+    value: numberValue(data.movement_value),
+    expectedDate: data.expected_date ?? "No expected date",
+    status: data.status ?? "Open",
+    documentRef: data.document_ref ?? ""
   };
 }
 

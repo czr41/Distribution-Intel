@@ -6,6 +6,7 @@ import type {
   BrandOption,
   CommandCenterData,
   CommandRecord,
+  InventoryPositionRow,
   MaterialFlowRow,
   MetaIntegrationSettings,
   OpenAIIntegrationSettings,
@@ -13,6 +14,7 @@ import type {
   OutletRow,
   PaymentRow,
   ProcurementOffice,
+  PurchaseOrderRow,
   SalesmanRow,
   SkuRow,
   TaskRow,
@@ -138,6 +140,46 @@ type BillResult = {
   brands?: { name?: string | null } | { name?: string | null }[] | null;
 };
 
+type ProcurementOfficeResult = {
+  id: string;
+  office_name: string;
+  region: string | null;
+  city: string | null;
+  state: string | null;
+  contact_person: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  procurement_role: string | null;
+  lead_time_days: number | string | null;
+  replenishment_mode: string | null;
+  status: string | null;
+  brands?: { name?: string | null } | { name?: string | null }[] | null;
+};
+
+type MaterialFlowResult = {
+  id: string;
+  movement_type: string | null;
+  from_location: string | null;
+  to_location: string | null;
+  quantity: number | string | null;
+  movement_value: number | string | null;
+  expected_date: string | null;
+  status: string | null;
+  document_ref: string | null;
+  brands?: { name?: string | null } | { name?: string | null }[] | null;
+  skus?: { name?: string | null; code?: string | null } | { name?: string | null; code?: string | null }[] | null;
+};
+
+type PurchaseOrderResult = {
+  id: string;
+  po_number: string | null;
+  expected_date: string | null;
+  total_value: number | string | null;
+  status: string | null;
+  brands?: { name?: string | null } | { name?: string | null }[] | null;
+  brand_branches?: { office_name?: string | null } | { office_name?: string | null }[] | null;
+};
+
 type VerificationDraftResult = {
   id: string;
   record_type: string;
@@ -247,6 +289,28 @@ function displayOrderStatus(status?: string | null): OrderRow["status"] {
   if (status === "cancelled") return "Cancelled";
   if (status === "on_hold") return "On hold";
   return "Intent captured";
+}
+
+function displayProcurementOfficeStatus(status?: string | null): ProcurementOffice["status"] {
+  if (status === "alternate") return "Alternate";
+  if (status === "inactive") return "Inactive";
+  return "Primary";
+}
+
+function displayMaterialMovementType(type?: string | null): MaterialFlowRow["movementType"] {
+  if (type === "outbound_sale") return "Outbound sale";
+  if (type === "billed_dispatch") return "Billed dispatch";
+  if (type === "return_hold") return "Return / hold";
+  return "Inbound procurement";
+}
+
+function displayPurchaseOrderStatus(status?: string | null): PurchaseOrderRow["status"] {
+  if (status === "sent") return "Sent";
+  if (status === "confirmed") return "Confirmed";
+  if (status === "partially_received") return "Partially received";
+  if (status === "received") return "Received";
+  if (status === "cancelled") return "Cancelled";
+  return "Draft";
 }
 
 function displayConnectionStatus(status?: string | null): "Connected" | "Draft" | "Disabled" {
@@ -503,6 +567,34 @@ function buildMaterialFlows(procurementOffices: ProcurementOffice[], skus: SkuRo
   return flows;
 }
 
+function buildInventoryPositions(skus: SkuRow[], materialFlows: MaterialFlowRow[]): InventoryPositionRow[] {
+  return skus.map((sku) => {
+    const skuFlows = materialFlows.filter((flow) => flow.skuCode === sku.code || flow.sku === sku.name);
+    const inbound = skuFlows.filter((flow) => flow.movementType === "Inbound procurement").reduce((sum, flow) => sum + flow.quantity, 0);
+    const outbound = skuFlows.filter((flow) => flow.movementType === "Outbound sale" || flow.movementType === "Billed dispatch").reduce((sum, flow) => sum + flow.quantity, 0);
+    const damaged = skuFlows.filter((flow) => flow.movementType === "Return / hold").reduce((sum, flow) => sum + flow.quantity, 0);
+    const onHand = Math.max(inbound - outbound, 0);
+    const reserved = Math.min(outbound, onHand);
+    const available = Math.max(onHand - reserved - damaged, 0);
+    const reorderLevel = 48;
+    const status: InventoryPositionRow["status"] = available <= 0 || available < reorderLevel ? "Reorder due" : available < reorderLevel * 2 ? "Low stock" : "Healthy";
+    return {
+      id: `inventory-${sku.id}`,
+      brand: sku.brand,
+      sku: sku.name,
+      skuCode: sku.code,
+      onHand,
+      reserved,
+      available,
+      inbound,
+      damaged,
+      reorderLevel,
+      warehouse: "Distributor warehouse",
+      status
+    };
+  });
+}
+
 export async function getCommandCenterData(): Promise<CommandCenterData> {
   const supabase = createSupabaseReadClient();
 
@@ -517,6 +609,9 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     paymentsResult,
     ordersResult,
     billsResult,
+    procurementOfficesResult,
+    materialFlowsResult,
+    purchaseOrdersResult,
     verificationDraftsResult,
     metaIntegrationResult,
     aiProviderResult
@@ -550,6 +645,18 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       .select("id,bill_number,bill_date,total_amount,payment_status,outlets(name),brands(name)")
       .order("created_at", { ascending: false }),
     supabase
+      .from("brand_branches")
+      .select("id,office_name,region,city,state,contact_person,contact_phone,contact_email,procurement_role,lead_time_days,replenishment_mode,status,brands(name)")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("inventory_movements")
+      .select("id,movement_type,from_location,to_location,quantity,movement_value,expected_date,status,document_ref,brands(name),skus(name,code)")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("purchase_orders")
+      .select("id,po_number,expected_date,total_value,status,brands(name),brand_branches(office_name)")
+      .order("created_at", { ascending: false }),
+    supabase
       .from("draft_business_records")
       .select("id,record_type,title,draft_json,confidence,status,created_at,message_classifications(primary_category,secondary_categories,language_detected,original_text,normalized_text,reason_for_review),message_ai_extractions(transcript_text,ocr_text),incoming_messages(text_body)")
       .neq("status", "approved")
@@ -578,6 +685,9 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   if (paymentsResult.error) throw new Error(paymentsResult.error.message);
   if (ordersResult.error) throw new Error(ordersResult.error.message);
   if (billsResult.error) throw new Error(billsResult.error.message);
+  if (procurementOfficesResult.error && procurementOfficesResult.error.code !== "42P01") throw new Error(procurementOfficesResult.error.message);
+  if (materialFlowsResult.error && materialFlowsResult.error.code !== "42P01") throw new Error(materialFlowsResult.error.message);
+  if (purchaseOrdersResult.error && purchaseOrdersResult.error.code !== "42P01") throw new Error(purchaseOrdersResult.error.message);
   if (verificationDraftsResult.error && verificationDraftsResult.error.code !== "42P01") throw new Error(verificationDraftsResult.error.message);
   if (metaIntegrationResult.error) throw new Error(metaIntegrationResult.error.message);
   if (aiProviderResult.error) throw new Error(aiProviderResult.error.message);
@@ -753,6 +863,61 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     };
   });
 
+  const persistedProcurementOffices: ProcurementOffice[] = ((procurementOfficesResult.data ?? []) as ProcurementOfficeResult[]).map((office) => {
+    const brand = Array.isArray(office.brands) ? office.brands[0] : office.brands;
+    return {
+      id: office.id,
+      brand: brand?.name ?? "Unassigned",
+      officeName: office.office_name,
+      region: office.region ?? "Unassigned",
+      city: office.city ?? "Unassigned",
+      state: office.state ?? "Unassigned",
+      contact: office.contact_person ?? "Unassigned",
+      phone: office.contact_phone ?? "",
+      email: office.contact_email ?? "",
+      procurementRole: office.procurement_role ?? "Distributor procurement",
+      leadTimeDays: numberValue(office.lead_time_days),
+      replenishmentMode: office.replenishment_mode ?? "Purchase order",
+      status: displayProcurementOfficeStatus(office.status)
+    };
+  });
+  const procurementOffices = persistedProcurementOffices.length ? persistedProcurementOffices : brands.flatMap(procurementOfficesForBrand);
+
+  const persistedMaterialFlows: MaterialFlowRow[] = ((materialFlowsResult.data ?? []) as MaterialFlowResult[]).map((flow) => {
+    const brand = Array.isArray(flow.brands) ? flow.brands[0] : flow.brands;
+    const sku = Array.isArray(flow.skus) ? flow.skus[0] : flow.skus;
+    return {
+      id: flow.id,
+      brand: brand?.name ?? "Unassigned",
+      sku: sku?.name ?? "Unassigned SKU",
+      skuCode: sku?.code ?? "",
+      movementType: displayMaterialMovementType(flow.movement_type),
+      fromLocation: flow.from_location ?? "",
+      toLocation: flow.to_location ?? "",
+      quantity: numberValue(flow.quantity),
+      value: numberValue(flow.movement_value),
+      expectedDate: flow.expected_date ?? "No expected date",
+      status: flow.status ?? "Open",
+      documentRef: flow.document_ref ?? ""
+    };
+  });
+  const materialFlows = persistedMaterialFlows.length ? persistedMaterialFlows : buildMaterialFlows(procurementOffices, skus, orders, bills);
+  const inventoryPositions = buildInventoryPositions(skus, materialFlows);
+
+  const purchaseOrders: PurchaseOrderRow[] = ((purchaseOrdersResult.data ?? []) as PurchaseOrderResult[]).map((purchaseOrder) => {
+    const brand = Array.isArray(purchaseOrder.brands) ? purchaseOrder.brands[0] : purchaseOrder.brands;
+    const branch = Array.isArray(purchaseOrder.brand_branches) ? purchaseOrder.brand_branches[0] : purchaseOrder.brand_branches;
+    return {
+      id: purchaseOrder.id,
+      brand: brand?.name ?? "Unassigned",
+      officeName: branch?.office_name ?? "Unassigned source office",
+      poNumber: purchaseOrder.po_number ?? "Draft PO",
+      expectedDate: purchaseOrder.expected_date ?? "No expected date",
+      totalValue: numberValue(purchaseOrder.total_value),
+      status: displayPurchaseOrderStatus(purchaseOrder.status)
+    };
+  });
+
   const verificationDrafts: VerificationDraftRecord[] = ((verificationDraftsResult.data ?? []) as VerificationDraftResult[]).map((draft) => {
     const classification = Array.isArray(draft.message_classifications) ? draft.message_classifications[0] : draft.message_classifications;
     const extraction = Array.isArray(draft.message_ai_extractions) ? draft.message_ai_extractions[0] : draft.message_ai_extractions;
@@ -844,8 +1009,5 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     updatedAt: typeof openAIConfig.updatedAt === "string" && openAIConfig.updatedAt ? openAIConfig.updatedAt : openAIDefaults.updatedAt
   };
 
-  const procurementOffices = brands.flatMap(procurementOfficesForBrand);
-  const materialFlows = buildMaterialFlows(procurementOffices, skus, orders, bills);
-
-  return { records, users, brands, procurementOffices, materialFlows, outlets, salesmen, skus, tasks, territories, payments, orders, bills, verificationDrafts, metaIntegration, aiProvider, openAIIntegration };
+  return { records, users, brands, procurementOffices, materialFlows, inventoryPositions, purchaseOrders, outlets, salesmen, skus, tasks, territories, payments, orders, bills, verificationDrafts, metaIntegration, aiProvider, openAIIntegration };
 }

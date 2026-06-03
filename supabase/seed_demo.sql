@@ -105,6 +105,90 @@ cross join (
 where b.name = 'Nestle'
   and not exists (select 1 from skus s where s.code = seed.code);
 
+insert into brand_branches (brand_id, office_name, region, city, state, contact_person, contact_phone, contact_email, procurement_role, lead_time_days, replenishment_mode, status)
+select b.id, seed.office_name, seed.region, seed.city, seed.state, seed.contact_person, seed.contact_phone, seed.contact_email, seed.procurement_role, seed.lead_time_days, seed.replenishment_mode, seed.status
+from brands b
+cross join (
+  values
+    ('Nestle South Regional HQ', 'South India', 'Bengaluru', 'Karnataka', 'Regional procurement desk', '+91 80400 02200', 'south.procurement@nestle.example', 'Primary procurement, stock allocation, and scheme approval', 3, 'Regional PO, distributor GRN, invoice-backed dispatch', 'primary'),
+    ('Nestle West Supply Office', 'West India', 'Mumbai', 'Maharashtra', 'Regional supply desk', '+91 22600 01144', 'west.supply@nestle.example', 'Alternate replenishment point for shortages and promotions', 5, 'Transfer order and distributor invoice', 'alternate'),
+    ('Nestle North Procurement Office', 'North India', 'Gurugram', 'Haryana', 'National procurement desk', '+91 1245007000', 'national.procurement@nestle.example', 'Central policy, price list, credit terms, and onboarding approvals', 7, 'Head office approval and regional release', 'alternate')
+) as seed(office_name, region, city, state, contact_person, contact_phone, contact_email, procurement_role, lead_time_days, replenishment_mode, status)
+where b.name = 'Nestle'
+  and not exists (select 1 from brand_branches branch where branch.brand_id = b.id and branch.office_name = seed.office_name);
+
+with po_seed as (
+  select
+    b.id as brand_id,
+    branch.id as branch_id,
+    seed.po_number,
+    seed.expected_date::date as expected_date,
+    seed.status,
+    seed.sku_code,
+    seed.quantity::numeric as quantity,
+    seed.unit_cost::numeric as unit_cost
+  from (
+    values
+      ('PO-NES-1001', 'Nestle South Regional HQ', 'NES-MAGGI-70', 240, 11.70, '2026-06-07', 'confirmed'),
+      ('PO-NES-1002', 'Nestle South Regional HQ', 'NES-KITKAT-37', 180, 23.40, '2026-06-08', 'sent'),
+      ('PO-NES-1003', 'Nestle West Supply Office', 'NES-MILKMAID-380', 96, 114.60, '2026-06-10', 'confirmed')
+  ) as seed(po_number, office_name, sku_code, quantity, unit_cost, expected_date, status)
+  join brands b on b.name = 'Nestle'
+  join brand_branches branch on branch.brand_id = b.id and branch.office_name = seed.office_name
+), inserted_pos as (
+  insert into purchase_orders (brand_id, branch_id, po_number, expected_date, total_value, status)
+  select brand_id, branch_id, po_number, expected_date, quantity * unit_cost, status
+  from po_seed
+  where not exists (select 1 from purchase_orders existing where existing.po_number = po_seed.po_number)
+  returning id, po_number, brand_id, branch_id, expected_date, total_value, status
+), all_pos as (
+  select id, po_number, brand_id, branch_id, expected_date, total_value, status from inserted_pos
+  union
+  select id, po_number, brand_id, branch_id, expected_date, total_value, status from purchase_orders where po_number in ('PO-NES-1001', 'PO-NES-1002', 'PO-NES-1003')
+)
+insert into purchase_order_items (purchase_order_id, sku_id, quantity, unit_cost, total_value)
+select po.id, sku.id, seed.quantity, seed.unit_cost, seed.quantity * seed.unit_cost
+from all_pos po
+join po_seed seed on seed.po_number = po.po_number
+join skus sku on sku.code = seed.sku_code
+where not exists (select 1 from purchase_order_items existing where existing.purchase_order_id = po.id and existing.sku_id = sku.id);
+
+with movement_seed as (
+  select
+    b.id as brand_id,
+    sku.id as sku_id,
+    branch.id as branch_id,
+    po.id as purchase_order_id,
+    seed.movement_type,
+    seed.from_location,
+    seed.to_location,
+    seed.quantity::numeric as quantity,
+    seed.movement_value::numeric as movement_value,
+    seed.expected_date::date as expected_date,
+    seed.status,
+    seed.document_ref
+  from (
+    values
+      ('Nestle South Regional HQ', 'NES-MAGGI-70', 'PO-NES-1001', 'inbound_procurement', 'Nestle South Regional HQ', 'Distributor warehouse', 240, 2808, '2026-06-07', 'PO confirmed', 'PO-NES-1001'),
+      ('Nestle South Regional HQ', 'NES-KITKAT-37', 'PO-NES-1002', 'inbound_procurement', 'Nestle South Regional HQ', 'Distributor warehouse', 180, 4212, '2026-06-08', 'PO sent', 'PO-NES-1002'),
+      ('Nestle West Supply Office', 'NES-MILKMAID-380', 'PO-NES-1003', 'inbound_procurement', 'Nestle West Supply Office', 'Distributor warehouse', 96, 11002, '2026-06-10', 'PO confirmed', 'PO-NES-1003')
+  ) as seed(office_name, sku_code, po_number, movement_type, from_location, to_location, quantity, movement_value, expected_date, status, document_ref)
+  join brands b on b.name = 'Nestle'
+  join skus sku on sku.code = seed.sku_code
+  join brand_branches branch on branch.brand_id = b.id and branch.office_name = seed.office_name
+  left join purchase_orders po on po.po_number = seed.po_number
+)
+insert into inventory_movements (brand_id, sku_id, branch_id, purchase_order_id, movement_type, from_location, to_location, quantity, movement_value, expected_date, status, document_ref)
+select brand_id, sku_id, branch_id, purchase_order_id, movement_type, from_location, to_location, quantity, movement_value, expected_date, status, document_ref
+from movement_seed seed
+where not exists (select 1 from inventory_movements existing where existing.document_ref = seed.document_ref and existing.sku_id = seed.sku_id and existing.movement_type = seed.movement_type);
+
+insert into supplier_payables (brand_id, branch_id, purchase_order_id, invoice_number, invoice_date, amount_due, amount_paid, due_date, status)
+select po.brand_id, po.branch_id, po.id, 'SUP-' || po.po_number, current_date, po.total_value, 0, (po.expected_date + interval '14 days')::date, 'due'
+from purchase_orders po
+where po.po_number in ('PO-NES-1001', 'PO-NES-1002', 'PO-NES-1003')
+  and not exists (select 1 from supplier_payables payable where payable.purchase_order_id = po.id);
+
 with order_seed as (
   select
     o.id as outlet_id,

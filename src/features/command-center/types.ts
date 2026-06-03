@@ -55,6 +55,31 @@ export type MaterialFlowRow = {
   documentRef: string;
 };
 
+export type InventoryPositionRow = {
+  id: string;
+  brand: string;
+  sku: string;
+  skuCode: string;
+  onHand: number;
+  reserved: number;
+  available: number;
+  inbound: number;
+  damaged: number;
+  reorderLevel: number;
+  warehouse: string;
+  status: "Healthy" | "Low stock" | "Reorder due";
+};
+
+export type PurchaseOrderRow = {
+  id: string;
+  brand: string;
+  officeName: string;
+  poNumber: string;
+  expectedDate: string;
+  totalValue: number;
+  status: "Draft" | "Sent" | "Confirmed" | "Partially received" | "Received" | "Cancelled";
+};
+
 export type OutletRow = {
   id: string;
   name: string;
@@ -238,6 +263,8 @@ export type CommandCenterData = {
   brands: BrandOption[];
   procurementOffices: ProcurementOffice[];
   materialFlows: MaterialFlowRow[];
+  inventoryPositions: InventoryPositionRow[];
+  purchaseOrders: PurchaseOrderRow[];
   outlets: OutletRow[];
   salesmen: SalesmanRow[];
   skus: SkuRow[];

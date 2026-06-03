@@ -1215,6 +1215,45 @@ textarea {
   gap: 10px;
 }
 
+.inventory-list {
+  display: grid;
+  gap: 10px;
+}
+
+.inventory-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(260px, 1.2fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.inventory-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.inventory-row strong,
+.inventory-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inventory-metrics .field {
+  padding: 8px;
+}
+
 .procurement-office-card {
   display: grid;
   gap: 10px;
@@ -1712,8 +1751,13 @@ textarea {
   .table-row.outlet-row,
   .table-row.salesman,
   .material-flow-row,
+  .inventory-row,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .inventory-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .flow-route {
