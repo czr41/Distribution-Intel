@@ -9,6 +9,7 @@ import type {
   BrandOption,
   CommandCenterData,
   CommandRecord,
+  GoodsReceiptRow,
   InventoryPositionRow,
   MaterialFlowRow,
   MetaIntegrationSettings,
@@ -20,6 +21,7 @@ import type {
   PurchaseOrderRow,
   SalesmanRow,
   SkuRow,
+  SupplierPayableRow,
   TaskRow,
   TerritoryRow,
   VerificationDraftRecord
@@ -59,7 +61,7 @@ type MediaLabResult = {
   };
   warning?: string;
 };
-type ModalType = "outlet" | "brand" | "procurementOffice" | "materialFlow" | "sku" | "salesman" | "user" | "task" | "territory" | "payment" | "order" | "bill" | null;
+type ModalType = "outlet" | "brand" | "procurementOffice" | "materialFlow" | "purchaseOrder" | "goodsReceipt" | "supplierPayable" | "sku" | "salesman" | "user" | "task" | "territory" | "payment" | "order" | "bill" | null;
 type BulkImportType = Exclude<ModalType, null>;
 type IntegrationNotice = { type: "success" | "error"; message: string };
 type SalesWorkflow = "visit" | "order" | "payment" | "evidence";
@@ -68,6 +70,9 @@ type EditableMasterData =
   | { type: "brand"; record: BrandOption }
   | { type: "procurementOffice"; record: ProcurementOffice }
   | { type: "materialFlow"; record: MaterialFlowRow }
+  | { type: "purchaseOrder"; record: PurchaseOrderRow }
+  | { type: "goodsReceipt"; record: GoodsReceiptRow }
+  | { type: "supplierPayable"; record: SupplierPayableRow }
   | { type: "sku"; record: SkuRow }
   | { type: "salesman"; record: SalesmanRow }
   | { type: "user"; record: AppUserRow }
@@ -80,6 +85,9 @@ type CommandCenterActions = {
   createBrand: (formData: FormData) => Promise<BrandOption>;
   createProcurementOffice: (formData: FormData) => Promise<ProcurementOffice>;
   createMaterialFlow: (formData: FormData) => Promise<MaterialFlowRow>;
+  createPurchaseOrder: (formData: FormData) => Promise<PurchaseOrderRow>;
+  createGoodsReceipt: (formData: FormData) => Promise<{ receipt: GoodsReceiptRow; movement?: MaterialFlowRow }>;
+  createSupplierPayable: (formData: FormData) => Promise<SupplierPayableRow>;
   createSku: (formData: FormData) => Promise<SkuRow>;
   createOutlet: (formData: FormData) => Promise<OutletRow>;
   createSalesman: (formData: FormData) => Promise<SalesmanRow>;
@@ -92,6 +100,9 @@ type CommandCenterActions = {
   updateBrand: (formData: FormData) => Promise<BrandOption>;
   updateProcurementOffice: (formData: FormData) => Promise<ProcurementOffice>;
   updateMaterialFlow: (formData: FormData) => Promise<MaterialFlowRow>;
+  updatePurchaseOrder: (formData: FormData) => Promise<PurchaseOrderRow>;
+  updateGoodsReceipt: (formData: FormData) => Promise<GoodsReceiptRow>;
+  updateSupplierPayable: (formData: FormData) => Promise<SupplierPayableRow>;
   updateSku: (formData: FormData) => Promise<SkuRow>;
   updateOutlet: (formData: FormData) => Promise<OutletRow>;
   updateSalesman: (formData: FormData) => Promise<SalesmanRow>;
@@ -107,6 +118,7 @@ type CommandCenterActions = {
   updateVerificationDraft: (formData: FormData) => Promise<VerificationDraftRecord>;
   approveVerificationDraft: (formData: FormData) => Promise<VerificationDraftRecord>;
   rejectVerificationDraft: (formData: FormData) => Promise<VerificationDraftRecord>;
+  archiveRecord: (formData: FormData) => Promise<{ type: string; id: string }>;
 };
 
 const openAIModelOptions = ["gpt-5.5", "gpt-5.5-pro", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-4.1-mini", "gpt-4.1-nano"];
@@ -162,6 +174,24 @@ const bulkTemplates: Record<BulkImportType, { title: string; filename: string; c
     filename: "shipd2r-material-flow-import-template.csv",
     columns: ["brand", "sku", "movementType", "fromLocation", "toLocation", "quantity", "value", "expectedDate", "status", "documentRef"],
     sample: ["Nestle", "Maggi 2-Minute Masala Noodles 70g (NES-MAGGI-70)", "Inbound procurement", "Nestle South Regional HQ", "Distributor warehouse", "240", "2808", "2026-06-07", "PO confirmed", "PO-NES-1001"]
+  },
+  purchaseOrder: {
+    title: "Purchase Order Bulk Import",
+    filename: "shipd2r-purchase-order-import-template.csv",
+    columns: ["brand", "officeName", "poNumber", "expectedDate", "totalValue", "status"],
+    sample: ["Nestle", "Nestle South Regional HQ", "PO-NES-1001", "2026-06-07", "12480", "Confirmed"]
+  },
+  goodsReceipt: {
+    title: "Goods Receipt Bulk Import",
+    filename: "shipd2r-goods-receipt-import-template.csv",
+    columns: ["brand", "officeName", "poNumber", "receiptNumber", "receivedDate", "warehouse", "sku", "quantity", "value", "status"],
+    sample: ["Nestle", "Nestle South Regional HQ", "PO-NES-1001", "GRN-NES-1001", "2026-06-08", "Distributor warehouse", "Maggi 2-Minute Masala Noodles 70g (NES-MAGGI-70)", "240", "3600", "Received"]
+  },
+  supplierPayable: {
+    title: "Supplier Payable Bulk Import",
+    filename: "shipd2r-supplier-payable-import-template.csv",
+    columns: ["brand", "officeName", "poNumber", "invoiceNumber", "invoiceDate", "amountDue", "amountPaid", "dueDate", "status"],
+    sample: ["Nestle", "Nestle South Regional HQ", "PO-NES-1001", "SUP-NES-1001", "2026-06-08", "12480", "0", "2026-06-22", "Pending"]
   },
   sku: {
     title: "Product / SKU Bulk Import",
@@ -369,7 +399,9 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const [procurementOffices, setProcurementOffices] = useState<ProcurementOffice[]>(initialData.procurementOffices);
   const [materialFlows, setMaterialFlows] = useState<MaterialFlowRow[]>(initialData.materialFlows);
   const [inventoryPositions, setInventoryPositions] = useState<InventoryPositionRow[]>(initialData.inventoryPositions);
-  const [purchaseOrders] = useState<PurchaseOrderRow[]>(initialData.purchaseOrders);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderRow[]>(initialData.purchaseOrders);
+  const [goodsReceipts, setGoodsReceipts] = useState<GoodsReceiptRow[]>(initialData.goodsReceipts);
+  const [supplierPayables, setSupplierPayables] = useState<SupplierPayableRow[]>(initialData.supplierPayables);
   const [outlets, setOutlets] = useState<OutletRow[]>(initialData.outlets);
   const [salesmen, setSalesmen] = useState<SalesmanRow[]>(initialData.salesmen);
   const [skus, setSkus] = useState<SkuRow[]>(initialData.skus);
@@ -538,6 +570,30 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     setModalType(item.type);
   }
 
+  async function archiveMasterRecord(type: Exclude<ModalType, null>, id: string) {
+    if (!isUuid(id)) return;
+    const form = new FormData();
+    form.set("type", type);
+    form.set("id", id);
+    await actions.archiveRecord(form);
+
+    if (type === "brand") setBrands((current) => current.map((brand) => (brand.id === id ? { ...brand, status: "Inactive" } : brand)));
+    if (type === "procurementOffice") setProcurementOffices((current) => current.map((office) => (office.id === id ? { ...office, status: "Inactive" } : office)));
+    if (type === "materialFlow") setMaterialFlows((current) => current.map((flow) => (flow.id === id ? { ...flow, status: "Archived" } : flow)));
+    if (type === "purchaseOrder") setPurchaseOrders((current) => current.map((purchaseOrder) => (purchaseOrder.id === id ? { ...purchaseOrder, status: "Cancelled" } : purchaseOrder)));
+    if (type === "goodsReceipt") setGoodsReceipts((current) => current.map((receipt) => (receipt.id === id ? { ...receipt, status: "Cancelled" } : receipt)));
+    if (type === "supplierPayable") setSupplierPayables((current) => current.map((payable) => (payable.id === id ? { ...payable, status: "Written off" } : payable)));
+    if (type === "sku") setSkus((current) => current.map((sku) => (sku.id === id ? { ...sku, status: "Inactive" } : sku)));
+    if (type === "outlet") setOutlets((current) => current.map((outlet) => (outlet.id === id ? { ...outlet, status: "Inactive" } : outlet)));
+    if (type === "salesman") setSalesmen((current) => current.map((person) => (person.id === id ? { ...person, status: "Inactive" } : person)));
+    if (type === "user") setUsers((current) => current.map((user) => (user.id === id ? { ...user, status: "Inactive" } : user)));
+    if (type === "task") setTasks((current) => current.map((task) => (task.id === id ? { ...task, status: "Cancelled" } : task)));
+    if (type === "territory") setTerritories((current) => current.map((territory) => (territory.id === id ? { ...territory, status: "Inactive" } : territory)));
+    if (type === "payment") setPayments((current) => current.map((payment) => (payment.id === id ? { ...payment, status: "Written off" } : payment)));
+    if (type === "order") setOrders((current) => current.map((order) => (order.id === id ? { ...order, status: "Cancelled" } : order)));
+    if (type === "bill") setBills((current) => current.map((bill) => (bill.id === id ? { ...bill, paymentStatus: "Written off" } : bill)));
+  }
+
   function verifyRecord(recordId: string) {
     setRecords((current) =>
       current.map((record) =>
@@ -650,6 +706,36 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         setInventoryPositions(inventoryFromFlows(skus, next));
         return next;
       });
+      setActiveView("procurement");
+    }
+
+    if (modalType === "purchaseOrder") {
+      const saved = isEditing ? await actions.updatePurchaseOrder(form) : await actions.createPurchaseOrder(form);
+      setPurchaseOrders((current) => (isEditing ? current.map((purchaseOrder) => (purchaseOrder.id === saved.id ? saved : purchaseOrder)) : [saved, ...current]));
+      setActiveView("procurement");
+    }
+
+    if (modalType === "goodsReceipt") {
+      if (isEditing) {
+        const saved = await actions.updateGoodsReceipt(form);
+        setGoodsReceipts((current) => current.map((receipt) => (receipt.id === saved.id ? saved : receipt)));
+      } else {
+        const saved = await actions.createGoodsReceipt(form);
+        setGoodsReceipts((current) => [saved.receipt, ...current]);
+        if (saved.movement) {
+          setMaterialFlows((current) => {
+            const next = [saved.movement as MaterialFlowRow, ...current];
+            setInventoryPositions(inventoryFromFlows(skus, next));
+            return next;
+          });
+        }
+      }
+      setActiveView("procurement");
+    }
+
+    if (modalType === "supplierPayable") {
+      const saved = isEditing ? await actions.updateSupplierPayable(form) : await actions.createSupplierPayable(form);
+      setSupplierPayables((current) => (isEditing ? current.map((payable) => (payable.id === saved.id ? saved : payable)) : [saved, ...current]));
       setActiveView("procurement");
     }
 
@@ -851,6 +937,49 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         setInventoryPositions(inventoryFromFlows(skus, next));
         return next;
       });
+      setActiveView("procurement");
+    }
+
+    if (type === "purchaseOrder") {
+      const savedRows: PurchaseOrderRow[] = [];
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.purchaseOrder.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Draft" : row[column] ?? ""));
+        savedRows.push(await actions.createPurchaseOrder(form));
+      }
+      setPurchaseOrders((current) => [...savedRows, ...current]);
+      setActiveView("procurement");
+    }
+
+    if (type === "goodsReceipt") {
+      const savedRows: GoodsReceiptRow[] = [];
+      const savedMovements: MaterialFlowRow[] = [];
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.goodsReceipt.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Received" : row[column] ?? ""));
+        const saved = await actions.createGoodsReceipt(form);
+        savedRows.push(saved.receipt);
+        if (saved.movement) savedMovements.push(saved.movement);
+      }
+      setGoodsReceipts((current) => [...savedRows, ...current]);
+      if (savedMovements.length) {
+        setMaterialFlows((current) => {
+          const next = [...savedMovements, ...current];
+          setInventoryPositions(inventoryFromFlows(skus, next));
+          return next;
+        });
+      }
+      setActiveView("procurement");
+    }
+
+    if (type === "supplierPayable") {
+      const savedRows: SupplierPayableRow[] = [];
+      for (const row of rows) {
+        const form = new FormData();
+        bulkTemplates.supplierPayable.columns.forEach((column) => form.set(column, column === "status" ? row[column] || "Pending" : row[column] ?? ""));
+        savedRows.push(await actions.createSupplierPayable(form));
+      }
+      setSupplierPayables((current) => [...savedRows, ...current]);
       setActiveView("procurement");
     }
 
@@ -1207,7 +1336,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
 
         {activeView === "media" && <MediaLabView aiProvider={aiProvider} />}
         {activeView === "outlets" && <OutletsView outlets={outlets} onAdd={() => openCreate("outlet")} onEdit={(outlet) => openEdit({ type: "outlet", record: outlet })} onBulkImport={() => openBulkImport("outlet")} />}
-        {activeView === "products" && <ProductsView skus={skus} onAdd={() => openCreate("sku")} onEdit={(sku) => openEdit({ type: "sku", record: sku })} onBulkImport={() => openBulkImport("sku")} />}
+        {activeView === "products" && <ProductsView skus={skus} onAdd={() => openCreate("sku")} onEdit={(sku) => openEdit({ type: "sku", record: sku })} onArchive={(sku) => archiveMasterRecord("sku", sku.id)} onBulkImport={() => openBulkImport("sku")} />}
         {activeView === "procurement" && (
           <ProcurementFlowView
             brands={brands}
@@ -1215,6 +1344,8 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
             materialFlows={materialFlows}
             inventoryPositions={inventoryPositions}
             purchaseOrders={purchaseOrders}
+            goodsReceipts={goodsReceipts}
+            supplierPayables={supplierPayables}
             skus={skus}
             orders={orders}
             bills={bills}
@@ -1222,12 +1353,19 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
             onEditOffice={(office) => openEdit({ type: "procurementOffice", record: office })}
             onAddMovement={() => openCreate("materialFlow")}
             onEditMovement={(flow) => openEdit({ type: "materialFlow", record: flow })}
+            onAddPurchaseOrder={() => openCreate("purchaseOrder")}
+            onEditPurchaseOrder={(purchaseOrder) => openEdit({ type: "purchaseOrder", record: purchaseOrder })}
+            onAddGoodsReceipt={() => openCreate("goodsReceipt")}
+            onEditGoodsReceipt={(receipt) => openEdit({ type: "goodsReceipt", record: receipt })}
+            onAddSupplierPayable={() => openCreate("supplierPayable")}
+            onEditSupplierPayable={(payable) => openEdit({ type: "supplierPayable", record: payable })}
+            onArchive={archiveMasterRecord}
             onBulkImportOffice={() => openBulkImport("procurementOffice")}
             onBulkImportMovement={() => openBulkImport("materialFlow")}
           />
         )}
         {activeView === "partners" && (
-          <PartnersView brands={brands} procurementOffices={procurementOffices} skus={skus} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onAddSku={() => openCreate("sku")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onBulkImport={() => openBulkImport("brand")} />
+          <PartnersView brands={brands} procurementOffices={procurementOffices} skus={skus} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onAddSku={() => openCreate("sku")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onArchive={(brand) => archiveMasterRecord("brand", brand.id)} onBulkImport={() => openBulkImport("brand")} />
         )}
         {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => openCreate("salesman")} onEdit={(person) => openEdit({ type: "salesman", record: person })} onBulkImport={() => openBulkImport("salesman")} />}
         {activeView === "users" && <UsersView users={users} onAdd={() => openCreate("user")} onEdit={(user) => openEdit({ type: "user", record: user })} onBulkImport={() => openBulkImport("user")} />}
@@ -1235,7 +1373,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         {activeView === "territories" && <TerritoriesView territories={territories} onAdd={() => openCreate("territory")} onEdit={(territory) => openEdit({ type: "territory", record: territory })} onBulkImport={() => openBulkImport("territory")} />}
         {activeView === "finance" && <FinanceView payments={payments} tasks={tasks} outlets={outlets} salesmen={salesmen} onAddPayment={() => openCreate("payment")} onCreateTask={() => openCreate("task")} onBulkImport={() => openBulkImport("payment")} />}
         {activeView === "payments" && <PaymentsView payments={payments} onAdd={() => openCreate("payment")} onEdit={(payment) => openEdit({ type: "payment", record: payment })} onBulkImport={() => openBulkImport("payment")} />}
-        {activeView === "orders" && <OrdersView orders={orders} onAdd={() => openCreate("order")} onEdit={(order) => openEdit({ type: "order", record: order })} onBulkImport={() => openBulkImport("order")} />}
+        {activeView === "orders" && <OrdersView orders={orders} onAdd={() => openCreate("order")} onEdit={(order) => openEdit({ type: "order", record: order })} onArchive={(order) => archiveMasterRecord("order", order.id)} onBulkImport={() => openBulkImport("order")} />}
         {activeView === "bills" && <BillsView bills={bills} onAdd={() => openCreate("bill")} onEdit={(bill) => openEdit({ type: "bill", record: bill })} onBulkImport={() => openBulkImport("bill")} />}
         {activeView === "reports" && <ReportsView />}
         {activeView === "crm-sync" && <CRMSyncView brands={brands} outlets={outlets} skus={skus} payments={payments} orders={orders} metaIntegration={metaIntegration} aiProvider={aiProvider} />}
@@ -1257,6 +1395,8 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           type={modalType}
           brands={brands}
           skus={skus}
+          procurementOffices={procurementOffices}
+          purchaseOrders={purchaseOrders}
           outlets={outlets}
           territories={territories}
           salesmen={salesmen}
@@ -1521,6 +1661,7 @@ function AdminDistributionDashboard({
           </div>
         </article>
       </section>
+
     </section>
   );
 }
@@ -1696,6 +1837,7 @@ function ManagerDashboard({
           </div>
         </article>
       </section>
+
     </section>
   );
 }
@@ -2444,7 +2586,7 @@ function OutletsView({ outlets, onAdd, onEdit, onBulkImport }: { outlets: Outlet
   );
 }
 
-function ProductsView({ skus, onAdd, onEdit, onBulkImport }: { skus: SkuRow[]; onAdd: () => void; onEdit: (sku: SkuRow) => void; onBulkImport: () => void }) {
+function ProductsView({ skus, onAdd, onEdit, onArchive, onBulkImport }: { skus: SkuRow[]; onAdd: () => void; onEdit: (sku: SkuRow) => void; onArchive: (sku: SkuRow) => void; onBulkImport: () => void }) {
   return (
     <CrudPanel title="Product Catalog" description="A compact SKU catalog for order capture, price checks, pack details, and client movement." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Product">
       <div className="product-market-grid">
@@ -2463,6 +2605,7 @@ function ProductsView({ skus, onAdd, onEdit, onBulkImport }: { skus: SkuRow[]; o
                 <div className="product-card-actions">
                   <button className="link-button" onClick={() => onEdit(sku)}>Picture</button>
                   <button className="link-button" onClick={() => onEdit(sku)}>Edit</button>
+                  {isUuid(sku.id) && <button className="link-button" onClick={() => onArchive(sku)}>Archive</button>}
                 </div>
               </div>
               <h3>{sku.name}</h3>
@@ -2490,6 +2633,8 @@ function ProcurementFlowView({
   materialFlows,
   inventoryPositions,
   purchaseOrders,
+  goodsReceipts,
+  supplierPayables,
   skus,
   orders,
   bills,
@@ -2497,6 +2642,13 @@ function ProcurementFlowView({
   onEditOffice,
   onAddMovement,
   onEditMovement,
+  onAddPurchaseOrder,
+  onEditPurchaseOrder,
+  onAddGoodsReceipt,
+  onEditGoodsReceipt,
+  onAddSupplierPayable,
+  onEditSupplierPayable,
+  onArchive,
   onBulkImportOffice,
   onBulkImportMovement
 }: {
@@ -2505,6 +2657,8 @@ function ProcurementFlowView({
   materialFlows: MaterialFlowRow[];
   inventoryPositions: InventoryPositionRow[];
   purchaseOrders: PurchaseOrderRow[];
+  goodsReceipts: GoodsReceiptRow[];
+  supplierPayables: SupplierPayableRow[];
   skus: SkuRow[];
   orders: OrderRow[];
   bills: BillRow[];
@@ -2512,6 +2666,13 @@ function ProcurementFlowView({
   onEditOffice: (office: ProcurementOffice) => void;
   onAddMovement: () => void;
   onEditMovement: (flow: MaterialFlowRow) => void;
+  onAddPurchaseOrder: () => void;
+  onEditPurchaseOrder: (purchaseOrder: PurchaseOrderRow) => void;
+  onAddGoodsReceipt: () => void;
+  onEditGoodsReceipt: (receipt: GoodsReceiptRow) => void;
+  onAddSupplierPayable: () => void;
+  onEditSupplierPayable: (payable: SupplierPayableRow) => void;
+  onArchive: (type: Exclude<ModalType, null>, id: string) => void;
   onBulkImportOffice: () => void;
   onBulkImportMovement: () => void;
 }) {
@@ -2532,6 +2693,9 @@ function ProcurementFlowView({
           <div className="panel-actions">
             <button className="secondary-button" onClick={onBulkImportOffice}>Import Branches</button>
             <button className="secondary-button" onClick={onBulkImportMovement}>Import Movement</button>
+            <button className="secondary-button" onClick={onAddPurchaseOrder}>Add PO</button>
+            <button className="secondary-button" onClick={onAddGoodsReceipt}>Add GRN</button>
+            <button className="secondary-button" onClick={onAddSupplierPayable}>Add Payable</button>
             <button className="primary-button" onClick={onAddOffice}>Add Branch</button>
             <button className="primary-button" onClick={onAddMovement}>Add Movement</button>
           </div>
@@ -2583,6 +2747,7 @@ function ProcurementFlowView({
                   <div className="record-meta">
                     <span className={`tag ${office.status === "Primary" ? "green" : ""}`}>{office.status}</span>
                     {isUuid(office.id) && <button className="link-button" onClick={() => onEditOffice(office)}>Edit</button>}
+                    {isUuid(office.id) && <button className="link-button" onClick={() => onArchive("procurementOffice", office.id)}>Archive</button>}
                   </div>
                 </div>
                 <div className="field-grid">
@@ -2622,6 +2787,7 @@ function ProcurementFlowView({
                   <strong>{money(flow.value)}</strong>
                   <small>{flow.quantity} units · {flow.status}</small>
                   {isUuid(flow.id) && <button className="link-button" onClick={() => onEditMovement(flow)}>Edit</button>}
+                  {isUuid(flow.id) && <button className="link-button" onClick={() => onArchive("materialFlow", flow.id)}>Archive</button>}
                 </div>
               </article>
             ))}
@@ -2663,6 +2829,7 @@ function ProcurementFlowView({
               <h2>Purchase Order Summary</h2>
               <p>Supplier-side procurement commitments linked to brand branches and source offices.</p>
             </div>
+            <button className="secondary-button" onClick={onAddPurchaseOrder}>Create PO</button>
           </div>
           <div className="material-flow-list">
             {purchaseOrders.map((purchaseOrder) => (
@@ -2680,10 +2847,79 @@ function ProcurementFlowView({
                 <div className="flow-value">
                   <strong>{money(purchaseOrder.totalValue)}</strong>
                   <small>{purchaseOrder.expectedDate}</small>
+                  {isUuid(purchaseOrder.id) && <button className="link-button" onClick={() => onEditPurchaseOrder(purchaseOrder)}>Edit</button>}
+                  {isUuid(purchaseOrder.id) && <button className="link-button" onClick={() => onArchive("purchaseOrder", purchaseOrder.id)}>Archive</button>}
                 </div>
               </article>
             ))}
             {!purchaseOrders.length && <p className="empty-state">Purchase order rows will appear after the procurement schema is seeded or imported.</p>}
+          </div>
+        </article>
+      </section>
+
+      <section className="procurement-grid">
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Goods Receipts</h2>
+              <p>GRNs confirm stock entering the distributor warehouse and can post inbound movement against SKUs.</p>
+            </div>
+            <button className="secondary-button" onClick={onAddGoodsReceipt}>Create GRN</button>
+          </div>
+          <div className="material-flow-list">
+            {goodsReceipts.map((receipt) => (
+              <article className="material-flow-row" key={receipt.id}>
+                <div>
+                  <span className="tag green">{receipt.status}</span>
+                  <strong>{receipt.receiptNumber}</strong>
+                  <small>{receipt.brand} - {receipt.poNumber}</small>
+                </div>
+                <div className="flow-route">
+                  <span>{receipt.officeName}</span>
+                  <b>to</b>
+                  <span>{receipt.warehouse}</span>
+                </div>
+                <div className="flow-value">
+                  <strong>{receipt.receivedDate}</strong>
+                  {isUuid(receipt.id) && <button className="link-button" onClick={() => onEditGoodsReceipt(receipt)}>Edit</button>}
+                  {isUuid(receipt.id) && <button className="link-button" onClick={() => onArchive("goodsReceipt", receipt.id)}>Archive</button>}
+                </div>
+              </article>
+            ))}
+            {!goodsReceipts.length && <p className="empty-state">Create a goods receipt when stock arrives from a brand source office.</p>}
+          </div>
+        </article>
+
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Supplier Payables</h2>
+              <p>Track brand invoices, due dates, partial payments, disputes, and write-offs.</p>
+            </div>
+            <button className="secondary-button" onClick={onAddSupplierPayable}>Add Payable</button>
+          </div>
+          <div className="material-flow-list">
+            {supplierPayables.map((payable) => (
+              <article className="material-flow-row" key={payable.id}>
+                <div>
+                  <span className={`tag ${payable.status === "Overdue" || payable.status === "Disputed" ? "warn" : "blue"}`}>{payable.status}</span>
+                  <strong>{payable.invoiceNumber}</strong>
+                  <small>{payable.brand} - {payable.poNumber}</small>
+                </div>
+                <div className="flow-route">
+                  <span>{payable.officeName}</span>
+                  <b>due</b>
+                  <span>{payable.dueDate}</span>
+                </div>
+                <div className="flow-value">
+                  <strong>{money(Math.max(payable.amountDue - payable.amountPaid, 0))}</strong>
+                  <small>{money(payable.amountPaid)} paid of {money(payable.amountDue)}</small>
+                  {isUuid(payable.id) && <button className="link-button" onClick={() => onEditSupplierPayable(payable)}>Edit</button>}
+                  {isUuid(payable.id) && <button className="link-button" onClick={() => onArchive("supplierPayable", payable.id)}>Archive</button>}
+                </div>
+              </article>
+            ))}
+            {!supplierPayables.length && <p className="empty-state">Supplier invoice and payment obligations will appear here.</p>}
           </div>
         </article>
       </section>
@@ -2701,6 +2937,7 @@ function PartnersView({
   onAdd,
   onAddSku,
   onEdit,
+  onArchive,
   onBulkImport
 }: {
   brands: BrandOption[];
@@ -2712,6 +2949,7 @@ function PartnersView({
   onAdd: () => void;
   onAddSku: () => void;
   onEdit: (brand: BrandOption) => void;
+  onArchive: (brand: BrandOption) => void;
   onBulkImport: () => void;
 }) {
   return (
@@ -2758,9 +2996,10 @@ function PartnersView({
                     {logo ? <img src={logo} alt={`${brand.name} logo`} /> : <span>{brand.name.slice(0, 1)}</span>}
                     <h2>{brand.name}</h2>
                   </div>
-                  <button className="link-button" onClick={() => onEdit(brand)}>
-                    Edit
-                  </button>
+                  <div className="inline-actions">
+                    <button className="link-button" onClick={() => onEdit(brand)}>Edit</button>
+                    {isUuid(brand.id) && <button className="link-button" onClick={() => onArchive(brand)}>Archive</button>}
+                  </div>
                 </div>
                 <p>{brand.category} client managed by {brand.contact}</p>
                 <div className="procurement-office-strip">
@@ -2965,14 +3204,17 @@ function PaymentsView({ payments, onAdd, onEdit, onBulkImport }: { payments: Pay
   );
 }
 
-function OrdersView({ orders, onAdd, onEdit, onBulkImport }: { orders: OrderRow[]; onAdd: () => void; onEdit: (order: OrderRow) => void; onBulkImport: () => void }) {
+function OrdersView({ orders, onAdd, onEdit, onArchive, onBulkImport }: { orders: OrderRow[]; onAdd: () => void; onEdit: (order: OrderRow) => void; onArchive: (order: OrderRow) => void; onBulkImport: () => void }) {
   return (
     <CrudPanel title="Orders" description="Outlet order intents captured by product/SKU, with brand derived from the SKU master." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Order">
       {orders.map((order) => (
         <article className="task-row" key={order.id}>
           <div className="queue-top">
             <strong>{order.outlet}</strong>
-            <button className="link-button" onClick={() => onEdit(order)}>Edit</button>
+            <div className="inline-actions">
+              <button className="link-button" onClick={() => onEdit(order)}>Edit</button>
+              {isUuid(order.id) && <button className="link-button" onClick={() => onArchive(order)}>Archive</button>}
+            </div>
           </div>
           <p>{order.sku}{order.skuCode ? ` (${order.skuCode})` : ""} - {order.brand}</p>
           <div className="record-meta">
@@ -3439,6 +3681,8 @@ function MasterDataModal({
   type,
   brands,
   skus,
+  procurementOffices,
+  purchaseOrders,
   outlets,
   territories,
   salesmen,
@@ -3450,11 +3694,13 @@ function MasterDataModal({
   type: Exclude<ModalType, null>;
   brands: BrandOption[];
   skus: SkuRow[];
+  procurementOffices: ProcurementOffice[];
+  purchaseOrders: PurchaseOrderRow[];
   outlets: OutletRow[];
   territories: TerritoryRow[];
   salesmen: SalesmanRow[];
   users: AppUserRow[];
-  initialValues?: OutletRow | BrandOption | ProcurementOffice | MaterialFlowRow | SkuRow | SalesmanRow | AppUserRow | TaskRow | TerritoryRow | PaymentRow | OrderRow | BillRow;
+  initialValues?: OutletRow | BrandOption | ProcurementOffice | MaterialFlowRow | PurchaseOrderRow | GoodsReceiptRow | SupplierPayableRow | SkuRow | SalesmanRow | AppUserRow | TaskRow | TerritoryRow | PaymentRow | OrderRow | BillRow;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -3464,8 +3710,14 @@ function MasterDataModal({
       ? "Brand Client"
       : type === "procurementOffice"
         ? "Client Branch / Source Office"
-        : type === "materialFlow"
-          ? "Material Movement"
+      : type === "materialFlow"
+        ? "Material Movement"
+        : type === "purchaseOrder"
+          ? "Purchase Order"
+          : type === "goodsReceipt"
+            ? "Goods Receipt"
+            : type === "supplierPayable"
+              ? "Supplier Payable"
       : type === "sku"
         ? "Product / SKU"
       : type === "salesman"
@@ -3486,6 +3738,8 @@ function MasterDataModal({
   const title = `${isEditing ? "Edit" : type === "task" ? "Create" : "Add"} ${noun}`;
   const brandOptions = brands.length ? brands.map((brand) => brand.name) : ["Unassigned"];
   const skuOptions = skus.length ? skus.map(skuOption) : ["Unassigned"];
+  const officeOptions = procurementOffices.length ? procurementOffices.map((office) => office.officeName) : ["Unassigned source office"];
+  const poOptions = purchaseOrders.length ? purchaseOrders.map((purchaseOrder) => purchaseOrder.poNumber) : ["Draft PO"];
   const outletOptions = outlets.length ? outlets.map((outlet) => outlet.name) : ["Unassigned"];
   const territoryOptions = ["Unassigned", ...territories.map((territory) => territory.name)];
   const salesmanOptions = ["Unassigned", ...salesmen.map((person) => person.name)];
@@ -3494,6 +3748,9 @@ function MasterDataModal({
   const brandValues = type === "brand" ? (initialValues as BrandOption | undefined) : undefined;
   const procurementOfficeValues = type === "procurementOffice" ? (initialValues as ProcurementOffice | undefined) : undefined;
   const materialFlowValues = type === "materialFlow" ? (initialValues as MaterialFlowRow | undefined) : undefined;
+  const purchaseOrderValues = type === "purchaseOrder" ? (initialValues as PurchaseOrderRow | undefined) : undefined;
+  const goodsReceiptValues = type === "goodsReceipt" ? (initialValues as GoodsReceiptRow | undefined) : undefined;
+  const supplierPayableValues = type === "supplierPayable" ? (initialValues as SupplierPayableRow | undefined) : undefined;
   const skuValues = type === "sku" ? (initialValues as SkuRow | undefined) : undefined;
   const salesmanValues = type === "salesman" ? (initialValues as SalesmanRow | undefined) : undefined;
   const userValues = type === "user" ? (initialValues as AppUserRow | undefined) : undefined;
@@ -3502,6 +3759,17 @@ function MasterDataModal({
   const paymentValues = type === "payment" ? (initialValues as PaymentRow | undefined) : undefined;
   const orderValues = type === "order" ? (initialValues as OrderRow | undefined) : undefined;
   const billValues = type === "bill" ? (initialValues as BillRow | undefined) : undefined;
+  const initialOrderSku = orderValues ? skus.find((sku) => sku.name === orderValues.sku || sku.code === orderValues.skuCode) : undefined;
+  const [adminOrderSearch, setAdminOrderSearch] = useState("");
+  const [selectedAdminOrderSkuId, setSelectedAdminOrderSkuId] = useState(initialOrderSku?.id ?? skus[0]?.id ?? "");
+  const selectedAdminOrderSku = skus.find((sku) => sku.id === selectedAdminOrderSkuId) ?? initialOrderSku ?? skus[0];
+  const visibleAdminOrderSkus = skus
+    .filter((sku) => {
+      const query = adminOrderSearch.trim().toLowerCase();
+      if (!query) return true;
+      return `${sku.name} ${sku.code} ${sku.brand} ${sku.category}`.toLowerCase().includes(query);
+    })
+    .slice(0, 8);
 
   return (
     <div className="modal-backdrop">
@@ -3567,6 +3835,43 @@ function MasterDataModal({
                 <Input name="expectedDate" label="Expected / document date" type="date" required={false} defaultValue={materialFlowValues?.expectedDate === "No expected date" ? "" : materialFlowValues?.expectedDate} />
                 <Input name="status" label="Movement status" defaultValue={materialFlowValues?.status} />
                 <Input name="documentRef" label="Document reference" required={false} defaultValue={materialFlowValues?.documentRef} />
+              </>
+            )}
+            {type === "purchaseOrder" && (
+              <>
+                <Select name="brand" label="Brand client" options={brandOptions} defaultValue={purchaseOrderValues?.brand} />
+                <Select name="officeName" label="Source office / branch" options={officeOptions} defaultValue={purchaseOrderValues?.officeName} />
+                <Input name="poNumber" label="PO number" defaultValue={purchaseOrderValues?.poNumber === "Draft PO" ? "" : purchaseOrderValues?.poNumber} />
+                <Input name="expectedDate" label="Expected receipt date" type="date" required={false} defaultValue={purchaseOrderValues?.expectedDate === "No expected date" ? "" : purchaseOrderValues?.expectedDate} />
+                <Input name="totalValue" label="Total value" type="number" required={false} defaultValue={purchaseOrderValues ? String(purchaseOrderValues.totalValue) : undefined} />
+                <Select name="status" label="Status" options={["Draft", "Sent", "Confirmed", "Partially received", "Received", "Cancelled"]} defaultValue={purchaseOrderValues?.status} />
+              </>
+            )}
+            {type === "goodsReceipt" && (
+              <>
+                <Select name="brand" label="Brand client" options={brandOptions} defaultValue={goodsReceiptValues?.brand} />
+                <Select name="officeName" label="Source office / branch" options={officeOptions} defaultValue={goodsReceiptValues?.officeName} />
+                <Select name="poNumber" label="Linked PO" options={poOptions} defaultValue={goodsReceiptValues?.poNumber} />
+                <Input name="receiptNumber" label="GRN / receipt number" defaultValue={goodsReceiptValues?.receiptNumber === "Draft GRN" ? "" : goodsReceiptValues?.receiptNumber} />
+                <Input name="receivedDate" label="Received date" type="date" required={false} defaultValue={goodsReceiptValues?.receivedDate === "No receipt date" ? "" : goodsReceiptValues?.receivedDate} />
+                <Input name="warehouse" label="Warehouse" defaultValue={goodsReceiptValues?.warehouse ?? "Distributor warehouse"} />
+                {!isEditing && <Select name="sku" label="Received product / SKU" options={skuOptions} />}
+                {!isEditing && <Input name="quantity" label="Received quantity" type="number" required={false} />}
+                {!isEditing && <Input name="value" label="Received value" type="number" required={false} />}
+                <Select name="status" label="Status" options={["Draft", "Received", "Quality hold", "Posted", "Cancelled"]} defaultValue={goodsReceiptValues?.status ?? "Received"} />
+              </>
+            )}
+            {type === "supplierPayable" && (
+              <>
+                <Select name="brand" label="Brand client" options={brandOptions} defaultValue={supplierPayableValues?.brand} />
+                <Select name="officeName" label="Source office / branch" options={officeOptions} defaultValue={supplierPayableValues?.officeName} />
+                <Select name="poNumber" label="Linked PO" options={poOptions} defaultValue={supplierPayableValues?.poNumber} />
+                <Input name="invoiceNumber" label="Supplier invoice number" defaultValue={supplierPayableValues?.invoiceNumber === "Draft invoice" ? "" : supplierPayableValues?.invoiceNumber} />
+                <Input name="invoiceDate" label="Invoice date" type="date" required={false} defaultValue={supplierPayableValues?.invoiceDate === "No invoice date" ? "" : supplierPayableValues?.invoiceDate} />
+                <Input name="amountDue" label="Amount due" type="number" defaultValue={supplierPayableValues ? String(supplierPayableValues.amountDue) : undefined} />
+                <Input name="amountPaid" label="Amount paid" type="number" required={false} defaultValue={supplierPayableValues ? String(supplierPayableValues.amountPaid) : undefined} />
+                <Input name="dueDate" label="Due date" type="date" required={false} defaultValue={supplierPayableValues?.dueDate === "No due date" ? "" : supplierPayableValues?.dueDate} />
+                <Select name="status" label="Status" options={["Pending", "Partially paid", "Paid", "Overdue", "Disputed", "Written off"]} defaultValue={supplierPayableValues?.status ?? "Pending"} />
               </>
             )}
             {type === "sku" && (
@@ -3638,7 +3943,30 @@ function MasterDataModal({
             {type === "order" && (
               <>
                 <Select name="outlet" label="Outlet" options={outletOptions} defaultValue={orderValues?.outlet} />
-                <Select name="sku" label="Product / SKU" options={skuOptions} defaultValue={orderSkuOption(orderValues)} />
+                <input type="hidden" name="sku" value={selectedAdminOrderSku ? skuOption(selectedAdminOrderSku) : orderSkuOption(orderValues) ?? ""} />
+                <div className="form-field wide">
+                  <label htmlFor="admin-order-product-search">Product / SKU</label>
+                  <input id="admin-order-product-search" type="search" value={adminOrderSearch} onChange={(event) => setAdminOrderSearch(event.target.value)} placeholder="Search product, SKU, brand, or category" />
+                  <div className="sales-product-picker wide">
+                    {visibleAdminOrderSkus.map((sku) => (
+                      <button
+                        className={`sales-product-option ${selectedAdminOrderSku?.id === sku.id ? "active" : ""}`}
+                        key={sku.id}
+                        type="button"
+                        onClick={() => setSelectedAdminOrderSkuId(sku.id)}
+                      >
+                        <span className="sales-product-thumb">
+                          {sku.imageUrl ? <img src={sku.imageUrl} alt="" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : productImageFallback(sku)}
+                        </span>
+                        <span>
+                          <strong>{sku.name}</strong>
+                          <small>{sku.brand} · {sku.code || "No SKU code"}</small>
+                        </span>
+                        <b>{money(sku.mrp)}</b>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <Input name="quantity" label="Quantity" type="number" defaultValue={orderValues?.quantity ? String(orderValues.quantity) : undefined} />
                 <Input name="unitPrice" label="Unit price" type="number" required={false} defaultValue={orderValues?.unitPrice ? String(orderValues.unitPrice) : undefined} />
                 <Input name="expectedValue" label="Order value" type="number" required={false} defaultValue={orderValues?.expectedValue ? String(orderValues.expectedValue) : undefined} />

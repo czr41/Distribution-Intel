@@ -29,7 +29,14 @@ import {
   updateBillAction,
   updateMaterialFlowAction,
   updateProcurementOfficeAction,
-  updateUserAction
+  updateUserAction,
+  createPurchaseOrderAction,
+  updatePurchaseOrderAction,
+  createGoodsReceiptAction,
+  updateGoodsReceiptAction,
+  createSupplierPayableAction,
+  updateSupplierPayableAction,
+  archiveRecordAction
 } from "@/features/command-center/actions";
 import { getCommandCenterData } from "@/features/command-center/data";
 
@@ -44,6 +51,8 @@ export default async function Home() {
     materialFlows: [],
     inventoryPositions: [],
     purchaseOrders: [],
+    goodsReceipts: [],
+    supplierPayables: [],
     outlets: [],
     salesmen: [],
     skus: [],
@@ -107,6 +116,9 @@ export default async function Home() {
         createBill: createBillAction,
         createProcurementOffice: createProcurementOfficeAction,
         createMaterialFlow: createMaterialFlowAction,
+        createPurchaseOrder: createPurchaseOrderAction,
+        createGoodsReceipt: createGoodsReceiptAction,
+        createSupplierPayable: createSupplierPayableAction,
         createUser: createUserAction,
         updateBrand: updateBrandAction,
         updateOutlet: updateOutletAction,
@@ -119,7 +131,11 @@ export default async function Home() {
         updateBill: updateBillAction,
         updateProcurementOffice: updateProcurementOfficeAction,
         updateMaterialFlow: updateMaterialFlowAction,
+        updatePurchaseOrder: updatePurchaseOrderAction,
+        updateGoodsReceipt: updateGoodsReceiptAction,
+        updateSupplierPayable: updateSupplierPayableAction,
         updateUser: updateUserAction,
+        archiveRecord: archiveRecordAction,
         saveMetaIntegration: saveMetaIntegrationAction,
         saveAIProvider: saveAIProviderAction,
         saveOpenAIIntegration: saveOpenAIIntegrationAction,

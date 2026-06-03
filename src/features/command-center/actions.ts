@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { AppUserRow, BillRow, BrandOption, MaterialFlowRow, OrderRow, OutletRow, PaymentRow, ProcurementOffice, SalesmanRow, SkuRow, TaskRow, TerritoryRow, VerificationDraftRecord } from "./types";
+import type { AppUserRow, BillRow, BrandOption, GoodsReceiptRow, MaterialFlowRow, OrderRow, OutletRow, PaymentRow, ProcurementOffice, PurchaseOrderRow, SalesmanRow, SkuRow, SupplierPayableRow, TaskRow, TerritoryRow, VerificationDraftRecord } from "./types";
 
 const statusMap = {
   Active: "active",
@@ -46,6 +46,45 @@ const materialFlowSchema = z.object({
   expectedDate: z.string().optional(),
   status: z.string().min(1),
   documentRef: z.string().optional()
+});
+
+const purchaseOrderSchema = z.object({
+  brand: z.string().min(1),
+  officeName: z.string().min(1),
+  poNumber: z.string().min(1),
+  expectedDate: z.string().optional(),
+  totalValue: z.string().optional(),
+  status: z.enum(["Draft", "Sent", "Confirmed", "Partially received", "Received", "Cancelled"])
+});
+
+const goodsReceiptSchema = z.object({
+  brand: z.string().min(1),
+  officeName: z.string().optional(),
+  poNumber: z.string().min(1),
+  receiptNumber: z.string().min(1),
+  receivedDate: z.string().optional(),
+  warehouse: z.string().min(1),
+  sku: z.string().optional(),
+  quantity: z.string().optional(),
+  value: z.string().optional(),
+  status: z.enum(["Draft", "Received", "Quality hold", "Posted", "Cancelled"])
+});
+
+const supplierPayableSchema = z.object({
+  brand: z.string().min(1),
+  officeName: z.string().optional(),
+  poNumber: z.string().min(1),
+  invoiceNumber: z.string().min(1),
+  invoiceDate: z.string().optional(),
+  amountDue: z.string().min(1),
+  amountPaid: z.string().optional(),
+  dueDate: z.string().optional(),
+  status: z.enum(["Pending", "Partially paid", "Paid", "Overdue", "Disputed", "Written off"])
+});
+
+const archiveSchema = z.object({
+  type: z.enum(["brand", "procurementOffice", "materialFlow", "sku", "outlet", "salesman", "user", "task", "territory", "payment", "order", "bill", "purchaseOrder", "goodsReceipt", "supplierPayable"]),
+  id: z.string().uuid()
 });
 
 const outletSchema = z.object({
@@ -282,6 +321,58 @@ function materialMovementType(type?: string | null): MaterialFlowRow["movementTy
   return "Inbound procurement";
 }
 
+function purchaseOrderDbStatus(status: PurchaseOrderRow["status"]) {
+  if (status === "Sent") return "sent";
+  if (status === "Confirmed") return "confirmed";
+  if (status === "Partially received") return "partially_received";
+  if (status === "Received") return "received";
+  if (status === "Cancelled") return "cancelled";
+  return "draft";
+}
+
+function purchaseOrderStatus(status?: string | null): PurchaseOrderRow["status"] {
+  if (status === "sent") return "Sent";
+  if (status === "confirmed") return "Confirmed";
+  if (status === "partially_received") return "Partially received";
+  if (status === "received") return "Received";
+  if (status === "cancelled") return "Cancelled";
+  return "Draft";
+}
+
+function goodsReceiptDbStatus(status: GoodsReceiptRow["status"]) {
+  if (status === "Received") return "received";
+  if (status === "Quality hold") return "quality_hold";
+  if (status === "Posted") return "posted";
+  if (status === "Cancelled") return "cancelled";
+  return "draft";
+}
+
+function goodsReceiptStatus(status?: string | null): GoodsReceiptRow["status"] {
+  if (status === "received") return "Received";
+  if (status === "quality_hold") return "Quality hold";
+  if (status === "posted") return "Posted";
+  if (status === "cancelled") return "Cancelled";
+  return "Draft";
+}
+
+function supplierPayableDbStatus(status: SupplierPayableRow["status"]) {
+  if (status === "Partially paid") return "partially_paid";
+  if (status === "Paid") return "paid";
+  if (status === "Overdue") return "overdue";
+  if (status === "Disputed") return "disputed";
+  if (status === "Written off") return "written_off";
+  return "pending";
+}
+
+function supplierPayableStatus(status?: string | null): SupplierPayableRow["status"] {
+  if (status === "partially_paid") return "Partially paid";
+  if (status === "paid") return "Paid";
+  if (status === "overdue") return "Overdue";
+  if (status === "disputed") return "Disputed";
+  if (status === "written_off") return "Written off";
+  return "Pending";
+}
+
 function outletStatus(status?: string | null): OutletRow["status"] {
   if (status === "inactive") return "Inactive";
   if (status === "prospect") return "Prospect";
@@ -430,6 +521,42 @@ async function findSkuForOrder(supabase: ReturnType<typeof createSupabaseAdminCl
     mrp: numberValue(data.mrp as number | string | null),
     brandId: data.brand_id as string,
     brandName: brand?.name ?? "Unassigned"
+  };
+}
+
+async function findProcurementOfficeIdByName(supabase: ReturnType<typeof createSupabaseAdminClient>, brandId: string | null, officeName?: string) {
+  if (!brandId || !officeName || officeName === "Unassigned source office") return null;
+  const { data, error } = await supabase
+    .from("brand_branches")
+    .select("id")
+    .eq("brand_id", brandId)
+    .eq("office_name", officeName)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.id ?? null;
+}
+
+async function findPurchaseOrderByNumber(supabase: ReturnType<typeof createSupabaseAdminClient>, poNumber?: string) {
+  if (!poNumber || poNumber === "Draft PO") return null;
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("id,po_number,brand_id,branch_id,total_value,brands(name),brand_branches(office_name)")
+    .eq("po_number", poNumber)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  const brand = Array.isArray(data.brands) ? data.brands[0] : data.brands;
+  const branch = Array.isArray(data.brand_branches) ? data.brand_branches[0] : data.brand_branches;
+  return {
+    id: data.id as string,
+    poNumber: (data.po_number ?? poNumber) as string,
+    brandId: data.brand_id as string | null,
+    branchId: data.branch_id as string | null,
+    totalValue: numberValue(data.total_value as number | string | null),
+    brandName: brand?.name ?? "Unassigned",
+    officeName: branch?.office_name ?? "Unassigned source office"
   };
 }
 
@@ -1664,6 +1791,342 @@ export async function updateMaterialFlowAction(formData: FormData): Promise<Mate
     status: data.status ?? "Open",
     documentRef: data.document_ref ?? ""
   };
+}
+
+export async function createPurchaseOrderAction(formData: FormData): Promise<PurchaseOrderRow> {
+  const input = purchaseOrderSchema.parse({
+    brand: formValue(formData, "brand"),
+    officeName: formValue(formData, "officeName"),
+    poNumber: formValue(formData, "poNumber"),
+    expectedDate: formValue(formData, "expectedDate"),
+    totalValue: formValue(formData, "totalValue"),
+    status: formValue(formData, "status")
+  });
+  const supabase = createSupabaseAdminClient();
+  const brandId = await findBrandIdByName(supabase, input.brand);
+  if (!brandId) throw new Error("Choose a valid brand client before creating a purchase order.");
+  const branchId = await findProcurementOfficeIdByName(supabase, brandId, input.officeName);
+  const totalValue = optionalNumberInput(input.totalValue);
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .insert({
+      brand_id: brandId,
+      branch_id: branchId,
+      po_number: input.poNumber,
+      expected_date: input.expectedDate || null,
+      total_value: totalValue,
+      status: purchaseOrderDbStatus(input.status)
+    })
+    .select("id,po_number,expected_date,total_value,status")
+    .single();
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return {
+    id: data.id,
+    brand: input.brand,
+    officeName: input.officeName,
+    poNumber: data.po_number ?? input.poNumber,
+    expectedDate: data.expected_date ?? "No expected date",
+    totalValue: numberValue(data.total_value),
+    status: purchaseOrderStatus(data.status)
+  };
+}
+
+export async function updatePurchaseOrderAction(formData: FormData): Promise<PurchaseOrderRow> {
+  const id = formId(formData);
+  const input = purchaseOrderSchema.parse({
+    brand: formValue(formData, "brand"),
+    officeName: formValue(formData, "officeName"),
+    poNumber: formValue(formData, "poNumber"),
+    expectedDate: formValue(formData, "expectedDate"),
+    totalValue: formValue(formData, "totalValue"),
+    status: formValue(formData, "status")
+  });
+  const supabase = createSupabaseAdminClient();
+  const brandId = await findBrandIdByName(supabase, input.brand);
+  if (!brandId) throw new Error("Choose a valid brand client before updating a purchase order.");
+  const branchId = await findProcurementOfficeIdByName(supabase, brandId, input.officeName);
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .update({
+      brand_id: brandId,
+      branch_id: branchId,
+      po_number: input.poNumber,
+      expected_date: input.expectedDate || null,
+      total_value: optionalNumberInput(input.totalValue),
+      status: purchaseOrderDbStatus(input.status),
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", id)
+    .select("id,po_number,expected_date,total_value,status")
+    .single();
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return {
+    id: data.id,
+    brand: input.brand,
+    officeName: input.officeName,
+    poNumber: data.po_number ?? input.poNumber,
+    expectedDate: data.expected_date ?? "No expected date",
+    totalValue: numberValue(data.total_value),
+    status: purchaseOrderStatus(data.status)
+  };
+}
+
+export async function createGoodsReceiptAction(formData: FormData): Promise<{ receipt: GoodsReceiptRow; movement?: MaterialFlowRow }> {
+  const input = goodsReceiptSchema.parse({
+    brand: formValue(formData, "brand"),
+    officeName: formValue(formData, "officeName"),
+    poNumber: formValue(formData, "poNumber"),
+    receiptNumber: formValue(formData, "receiptNumber"),
+    receivedDate: formValue(formData, "receivedDate"),
+    warehouse: formValue(formData, "warehouse"),
+    sku: formValue(formData, "sku"),
+    quantity: formValue(formData, "quantity"),
+    value: formValue(formData, "value"),
+    status: formValue(formData, "status")
+  });
+  const supabase = createSupabaseAdminClient();
+  const po = await findPurchaseOrderByNumber(supabase, input.poNumber);
+  const brandId = po?.brandId ?? await findBrandIdByName(supabase, input.brand);
+  if (!brandId) throw new Error("Choose a valid brand client before creating a goods receipt.");
+  const { data, error } = await supabase
+    .from("goods_receipts")
+    .insert({
+      purchase_order_id: po?.id ?? null,
+      receipt_number: input.receiptNumber,
+      received_date: input.receivedDate || null,
+      warehouse: input.warehouse,
+      status: goodsReceiptDbStatus(input.status)
+    })
+    .select("id,receipt_number,received_date,warehouse,status")
+    .single();
+  if (error) throw new Error(error.message);
+
+  let movement: MaterialFlowRow | undefined;
+  const sku = input.sku ? await findSkuForOrder(supabase, input.sku) : null;
+  if (sku && input.quantity) {
+    const quantity = numberInput(input.quantity);
+    const value = input.value ? numberInput(input.value) : quantity * sku.mrp;
+    const { data: movementData, error: movementError } = await supabase
+      .from("inventory_movements")
+      .insert({
+        brand_id: brandId,
+        sku_id: sku.id,
+        movement_type: "inbound_procurement",
+        from_location: po?.officeName ?? (input.officeName || "Brand source office"),
+        to_location: input.warehouse,
+        quantity,
+        movement_value: value,
+        expected_date: input.receivedDate || null,
+        status: input.status === "Posted" ? "GRN posted" : "GRN received",
+        document_ref: input.receiptNumber
+      })
+      .select("id,movement_type,from_location,to_location,quantity,movement_value,expected_date,status,document_ref")
+      .single();
+    if (movementError) throw new Error(movementError.message);
+    movement = {
+      id: movementData.id,
+      brand: input.brand,
+      sku: sku.name,
+      skuCode: sku.code,
+      movementType: materialMovementType(movementData.movement_type),
+      fromLocation: movementData.from_location ?? "",
+      toLocation: movementData.to_location ?? "",
+      quantity: numberValue(movementData.quantity),
+      value: numberValue(movementData.movement_value),
+      expectedDate: movementData.expected_date ?? "No expected date",
+      status: movementData.status ?? "GRN received",
+      documentRef: movementData.document_ref ?? ""
+    };
+  }
+
+  revalidatePath("/");
+  return {
+    receipt: {
+      id: data.id,
+      brand: po?.brandName ?? input.brand,
+      officeName: po?.officeName ?? (input.officeName || "Unassigned source office"),
+      poNumber: po?.poNumber ?? input.poNumber,
+      receiptNumber: data.receipt_number ?? input.receiptNumber,
+      receivedDate: data.received_date ?? "No receipt date",
+      warehouse: data.warehouse ?? input.warehouse,
+      status: goodsReceiptStatus(data.status)
+    },
+    movement
+  };
+}
+
+export async function updateGoodsReceiptAction(formData: FormData): Promise<GoodsReceiptRow> {
+  const id = formId(formData);
+  const input = goodsReceiptSchema.parse({
+    brand: formValue(formData, "brand"),
+    officeName: formValue(formData, "officeName"),
+    poNumber: formValue(formData, "poNumber"),
+    receiptNumber: formValue(formData, "receiptNumber"),
+    receivedDate: formValue(formData, "receivedDate"),
+    warehouse: formValue(formData, "warehouse"),
+    sku: formValue(formData, "sku"),
+    quantity: formValue(formData, "quantity"),
+    value: formValue(formData, "value"),
+    status: formValue(formData, "status")
+  });
+  const supabase = createSupabaseAdminClient();
+  const po = await findPurchaseOrderByNumber(supabase, input.poNumber);
+  const { data, error } = await supabase
+    .from("goods_receipts")
+    .update({
+      purchase_order_id: po?.id ?? null,
+      receipt_number: input.receiptNumber,
+      received_date: input.receivedDate || null,
+      warehouse: input.warehouse,
+      status: goodsReceiptDbStatus(input.status),
+    })
+    .eq("id", id)
+    .select("id,receipt_number,received_date,warehouse,status")
+    .single();
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return {
+    id: data.id,
+    brand: po?.brandName ?? input.brand,
+    officeName: po?.officeName ?? (input.officeName || "Unassigned source office"),
+    poNumber: po?.poNumber ?? input.poNumber,
+    receiptNumber: data.receipt_number ?? input.receiptNumber,
+    receivedDate: data.received_date ?? "No receipt date",
+    warehouse: data.warehouse ?? input.warehouse,
+    status: goodsReceiptStatus(data.status)
+  };
+}
+
+export async function createSupplierPayableAction(formData: FormData): Promise<SupplierPayableRow> {
+  const input = supplierPayableSchema.parse({
+    brand: formValue(formData, "brand"),
+    officeName: formValue(formData, "officeName"),
+    poNumber: formValue(formData, "poNumber"),
+    invoiceNumber: formValue(formData, "invoiceNumber"),
+    invoiceDate: formValue(formData, "invoiceDate"),
+    amountDue: formValue(formData, "amountDue"),
+    amountPaid: formValue(formData, "amountPaid"),
+    dueDate: formValue(formData, "dueDate"),
+    status: formValue(formData, "status")
+  });
+  const supabase = createSupabaseAdminClient();
+  const po = await findPurchaseOrderByNumber(supabase, input.poNumber);
+  const brandId = po?.brandId ?? await findBrandIdByName(supabase, input.brand);
+  if (!brandId) throw new Error("Choose a valid brand client before adding a supplier payable.");
+  const amountDue = numberInput(input.amountDue);
+  const amountPaid = optionalNumberInput(input.amountPaid);
+  const { data, error } = await supabase
+    .from("supplier_payables")
+    .insert({
+      purchase_order_id: po?.id ?? null,
+      brand_id: brandId,
+      branch_id: po?.branchId ?? null,
+      invoice_number: input.invoiceNumber,
+      invoice_date: input.invoiceDate || null,
+      amount_due: amountDue,
+      amount_paid: amountPaid,
+      due_date: input.dueDate || null,
+      status: supplierPayableDbStatus(input.status)
+    })
+    .select("id,invoice_number,invoice_date,amount_due,amount_paid,due_date,status")
+    .single();
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return {
+    id: data.id,
+    brand: po?.brandName ?? input.brand,
+    officeName: po?.officeName ?? (input.officeName || "Unassigned source office"),
+    poNumber: po?.poNumber ?? input.poNumber,
+    invoiceNumber: data.invoice_number ?? input.invoiceNumber,
+    invoiceDate: data.invoice_date ?? "No invoice date",
+    amountDue: numberValue(data.amount_due),
+    amountPaid: numberValue(data.amount_paid),
+    dueDate: data.due_date ?? "No due date",
+    status: supplierPayableStatus(data.status)
+  };
+}
+
+export async function updateSupplierPayableAction(formData: FormData): Promise<SupplierPayableRow> {
+  const id = formId(formData);
+  const input = supplierPayableSchema.parse({
+    brand: formValue(formData, "brand"),
+    officeName: formValue(formData, "officeName"),
+    poNumber: formValue(formData, "poNumber"),
+    invoiceNumber: formValue(formData, "invoiceNumber"),
+    invoiceDate: formValue(formData, "invoiceDate"),
+    amountDue: formValue(formData, "amountDue"),
+    amountPaid: formValue(formData, "amountPaid"),
+    dueDate: formValue(formData, "dueDate"),
+    status: formValue(formData, "status")
+  });
+  const supabase = createSupabaseAdminClient();
+  const po = await findPurchaseOrderByNumber(supabase, input.poNumber);
+  const brandId = po?.brandId ?? await findBrandIdByName(supabase, input.brand);
+  if (!brandId) throw new Error("Choose a valid brand client before updating a supplier payable.");
+  const { data, error } = await supabase
+    .from("supplier_payables")
+    .update({
+      purchase_order_id: po?.id ?? null,
+      brand_id: brandId,
+      branch_id: po?.branchId ?? null,
+      invoice_number: input.invoiceNumber,
+      invoice_date: input.invoiceDate || null,
+      amount_due: numberInput(input.amountDue),
+      amount_paid: optionalNumberInput(input.amountPaid),
+      due_date: input.dueDate || null,
+      status: supplierPayableDbStatus(input.status),
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", id)
+    .select("id,invoice_number,invoice_date,amount_due,amount_paid,due_date,status")
+    .single();
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return {
+    id: data.id,
+    brand: po?.brandName ?? input.brand,
+    officeName: po?.officeName ?? (input.officeName || "Unassigned source office"),
+    poNumber: po?.poNumber ?? input.poNumber,
+    invoiceNumber: data.invoice_number ?? input.invoiceNumber,
+    invoiceDate: data.invoice_date ?? "No invoice date",
+    amountDue: numberValue(data.amount_due),
+    amountPaid: numberValue(data.amount_paid),
+    dueDate: data.due_date ?? "No due date",
+    status: supplierPayableStatus(data.status)
+  };
+}
+
+export async function archiveRecordAction(formData: FormData): Promise<{ type: string; id: string }> {
+  const input = archiveSchema.parse({
+    type: formValue(formData, "type"),
+    id: formValue(formData, "id")
+  });
+  const supabase = createSupabaseAdminClient();
+  const updates: Record<typeof input.type, { table: string; values: Record<string, string> }> = {
+    brand: { table: "brands", values: { status: "inactive" } },
+    procurementOffice: { table: "brand_branches", values: { status: "inactive" } },
+    materialFlow: { table: "inventory_movements", values: { status: "Archived" } },
+    sku: { table: "skus", values: { status: "inactive" } },
+    outlet: { table: "outlets", values: { status: "inactive" } },
+    salesman: { table: "field_executives", values: { status: "inactive" } },
+    user: { table: "users", values: { status: "inactive" } },
+    task: { table: "tasks", values: { status: "cancelled" } },
+    territory: { table: "territories", values: { status: "inactive" } },
+    payment: { table: "payments", values: { status: "written_off" } },
+    order: { table: "orders", values: { status: "cancelled" } },
+    bill: { table: "bills", values: { payment_status: "written_off" } },
+    purchaseOrder: { table: "purchase_orders", values: { status: "cancelled" } },
+    goodsReceipt: { table: "goods_receipts", values: { status: "cancelled" } },
+    supplierPayable: { table: "supplier_payables", values: { status: "written_off" } }
+  };
+  const update = updates[input.type];
+  const updateValues = input.type === "goodsReceipt" ? update.values : { ...update.values, updated_at: new Date().toISOString() };
+  const { error } = await supabase.from(update.table).update(updateValues).eq("id", input.id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+  return input;
 }
 
 export async function createBillAction(formData: FormData): Promise<BillRow> {

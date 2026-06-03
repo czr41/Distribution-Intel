@@ -80,6 +80,30 @@ export type PurchaseOrderRow = {
   status: "Draft" | "Sent" | "Confirmed" | "Partially received" | "Received" | "Cancelled";
 };
 
+export type GoodsReceiptRow = {
+  id: string;
+  brand: string;
+  officeName: string;
+  poNumber: string;
+  receiptNumber: string;
+  receivedDate: string;
+  warehouse: string;
+  status: "Draft" | "Received" | "Quality hold" | "Posted" | "Cancelled";
+};
+
+export type SupplierPayableRow = {
+  id: string;
+  brand: string;
+  officeName: string;
+  poNumber: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  amountDue: number;
+  amountPaid: number;
+  dueDate: string;
+  status: "Pending" | "Partially paid" | "Paid" | "Overdue" | "Disputed" | "Written off";
+};
+
 export type OutletRow = {
   id: string;
   name: string;
@@ -265,6 +289,8 @@ export type CommandCenterData = {
   materialFlows: MaterialFlowRow[];
   inventoryPositions: InventoryPositionRow[];
   purchaseOrders: PurchaseOrderRow[];
+  goodsReceipts: GoodsReceiptRow[];
+  supplierPayables: SupplierPayableRow[];
   outlets: OutletRow[];
   salesmen: SalesmanRow[];
   skus: SkuRow[];

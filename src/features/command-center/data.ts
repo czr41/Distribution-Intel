@@ -6,6 +6,7 @@ import type {
   BrandOption,
   CommandCenterData,
   CommandRecord,
+  GoodsReceiptRow,
   InventoryPositionRow,
   MaterialFlowRow,
   MetaIntegrationSettings,
@@ -17,6 +18,7 @@ import type {
   PurchaseOrderRow,
   SalesmanRow,
   SkuRow,
+  SupplierPayableRow,
   TaskRow,
   TerritoryRow,
   VerificationDraftRecord
@@ -180,6 +182,36 @@ type PurchaseOrderResult = {
   brand_branches?: { office_name?: string | null } | { office_name?: string | null }[] | null;
 };
 
+type GoodsReceiptResult = {
+  id: string;
+  receipt_number: string | null;
+  received_date: string | null;
+  warehouse: string | null;
+  status: string | null;
+  purchase_orders?: {
+    po_number?: string | null;
+    brands?: { name?: string | null } | { name?: string | null }[] | null;
+    brand_branches?: { office_name?: string | null } | { office_name?: string | null }[] | null;
+  } | {
+    po_number?: string | null;
+    brands?: { name?: string | null } | { name?: string | null }[] | null;
+    brand_branches?: { office_name?: string | null } | { office_name?: string | null }[] | null;
+  }[] | null;
+};
+
+type SupplierPayableResult = {
+  id: string;
+  invoice_number: string | null;
+  invoice_date: string | null;
+  amount_due: number | string | null;
+  amount_paid: number | string | null;
+  due_date: string | null;
+  status: string | null;
+  brands?: { name?: string | null } | { name?: string | null }[] | null;
+  brand_branches?: { office_name?: string | null } | { office_name?: string | null }[] | null;
+  purchase_orders?: { po_number?: string | null } | { po_number?: string | null }[] | null;
+};
+
 type VerificationDraftResult = {
   id: string;
   record_type: string;
@@ -311,6 +343,23 @@ function displayPurchaseOrderStatus(status?: string | null): PurchaseOrderRow["s
   if (status === "received") return "Received";
   if (status === "cancelled") return "Cancelled";
   return "Draft";
+}
+
+function displayGoodsReceiptStatus(status?: string | null): GoodsReceiptRow["status"] {
+  if (status === "received") return "Received";
+  if (status === "quality_hold") return "Quality hold";
+  if (status === "posted") return "Posted";
+  if (status === "cancelled") return "Cancelled";
+  return "Draft";
+}
+
+function displaySupplierPayableStatus(status?: string | null): SupplierPayableRow["status"] {
+  if (status === "partially_paid") return "Partially paid";
+  if (status === "paid") return "Paid";
+  if (status === "overdue") return "Overdue";
+  if (status === "disputed") return "Disputed";
+  if (status === "written_off") return "Written off";
+  return "Pending";
 }
 
 function displayConnectionStatus(status?: string | null): "Connected" | "Draft" | "Disabled" {
@@ -612,6 +661,8 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     procurementOfficesResult,
     materialFlowsResult,
     purchaseOrdersResult,
+    goodsReceiptsResult,
+    supplierPayablesResult,
     verificationDraftsResult,
     metaIntegrationResult,
     aiProviderResult
@@ -657,6 +708,14 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       .select("id,po_number,expected_date,total_value,status,brands(name),brand_branches(office_name)")
       .order("created_at", { ascending: false }),
     supabase
+      .from("goods_receipts")
+      .select("id,receipt_number,received_date,warehouse,status,purchase_orders(po_number,brands(name),brand_branches(office_name))")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("supplier_payables")
+      .select("id,invoice_number,invoice_date,amount_due,amount_paid,due_date,status,brands(name),brand_branches(office_name),purchase_orders(po_number)")
+      .order("created_at", { ascending: false }),
+    supabase
       .from("draft_business_records")
       .select("id,record_type,title,draft_json,confidence,status,created_at,message_classifications(primary_category,secondary_categories,language_detected,original_text,normalized_text,reason_for_review),message_ai_extractions(transcript_text,ocr_text),incoming_messages(text_body)")
       .neq("status", "approved")
@@ -688,6 +747,8 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   if (procurementOfficesResult.error && procurementOfficesResult.error.code !== "42P01") throw new Error(procurementOfficesResult.error.message);
   if (materialFlowsResult.error && materialFlowsResult.error.code !== "42P01") throw new Error(materialFlowsResult.error.message);
   if (purchaseOrdersResult.error && purchaseOrdersResult.error.code !== "42P01") throw new Error(purchaseOrdersResult.error.message);
+  if (goodsReceiptsResult.error && goodsReceiptsResult.error.code !== "42P01") throw new Error(goodsReceiptsResult.error.message);
+  if (supplierPayablesResult.error && supplierPayablesResult.error.code !== "42P01") throw new Error(supplierPayablesResult.error.message);
   if (verificationDraftsResult.error && verificationDraftsResult.error.code !== "42P01") throw new Error(verificationDraftsResult.error.message);
   if (metaIntegrationResult.error) throw new Error(metaIntegrationResult.error.message);
   if (aiProviderResult.error) throw new Error(aiProviderResult.error.message);
@@ -918,6 +979,40 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     };
   });
 
+  const goodsReceipts: GoodsReceiptRow[] = ((goodsReceiptsResult.data ?? []) as GoodsReceiptResult[]).map((receipt) => {
+    const purchaseOrder = Array.isArray(receipt.purchase_orders) ? receipt.purchase_orders[0] : receipt.purchase_orders;
+    const brand = Array.isArray(purchaseOrder?.brands) ? purchaseOrder?.brands[0] : purchaseOrder?.brands;
+    const branch = Array.isArray(purchaseOrder?.brand_branches) ? purchaseOrder?.brand_branches[0] : purchaseOrder?.brand_branches;
+    return {
+      id: receipt.id,
+      brand: brand?.name ?? "Unassigned",
+      officeName: branch?.office_name ?? "Unassigned source office",
+      poNumber: purchaseOrder?.po_number ?? "Draft PO",
+      receiptNumber: receipt.receipt_number ?? "Draft GRN",
+      receivedDate: receipt.received_date ?? "No receipt date",
+      warehouse: receipt.warehouse ?? "Distributor warehouse",
+      status: displayGoodsReceiptStatus(receipt.status)
+    };
+  });
+
+  const supplierPayables: SupplierPayableRow[] = ((supplierPayablesResult.data ?? []) as SupplierPayableResult[]).map((payable) => {
+    const brand = Array.isArray(payable.brands) ? payable.brands[0] : payable.brands;
+    const branch = Array.isArray(payable.brand_branches) ? payable.brand_branches[0] : payable.brand_branches;
+    const purchaseOrder = Array.isArray(payable.purchase_orders) ? payable.purchase_orders[0] : payable.purchase_orders;
+    return {
+      id: payable.id,
+      brand: brand?.name ?? "Unassigned",
+      officeName: branch?.office_name ?? "Unassigned source office",
+      poNumber: purchaseOrder?.po_number ?? "Draft PO",
+      invoiceNumber: payable.invoice_number ?? "Draft invoice",
+      invoiceDate: payable.invoice_date ?? "No invoice date",
+      amountDue: numberValue(payable.amount_due),
+      amountPaid: numberValue(payable.amount_paid),
+      dueDate: payable.due_date ?? "No due date",
+      status: displaySupplierPayableStatus(payable.status)
+    };
+  });
+
   const verificationDrafts: VerificationDraftRecord[] = ((verificationDraftsResult.data ?? []) as VerificationDraftResult[]).map((draft) => {
     const classification = Array.isArray(draft.message_classifications) ? draft.message_classifications[0] : draft.message_classifications;
     const extraction = Array.isArray(draft.message_ai_extractions) ? draft.message_ai_extractions[0] : draft.message_ai_extractions;
@@ -1009,5 +1104,5 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     updatedAt: typeof openAIConfig.updatedAt === "string" && openAIConfig.updatedAt ? openAIConfig.updatedAt : openAIDefaults.updatedAt
   };
 
-  return { records, users, brands, procurementOffices, materialFlows, inventoryPositions, purchaseOrders, outlets, salesmen, skus, tasks, territories, payments, orders, bills, verificationDrafts, metaIntegration, aiProvider, openAIIntegration };
+  return { records, users, brands, procurementOffices, materialFlows, inventoryPositions, purchaseOrders, goodsReceipts, supplierPayables, outlets, salesmen, skus, tasks, territories, payments, orders, bills, verificationDrafts, metaIntegration, aiProvider, openAIIntegration };
 }
