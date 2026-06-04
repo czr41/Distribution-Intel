@@ -454,6 +454,53 @@ h2 {
   color: var(--muted);
 }
 
+.sales-order-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(26, 126, 144, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 -10px 24px rgba(24, 33, 40, 0.08);
+}
+
+.sales-order-dock div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sales-order-dock span,
+.sales-order-dock small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.sales-order-dock span {
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.sales-order-dock strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sales-order-dock button {
+  min-height: 38px;
+  padding: 0 16px;
+}
+
 .sales-evidence-result {
   display: grid;
   gap: 8px;
@@ -1249,6 +1296,40 @@ textarea {
   transform: rotate(45deg);
 }
 
+.procurement-status-strip,
+.access-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.procurement-status-strip div {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 26px rgba(24, 33, 40, 0.05);
+}
+
+.procurement-status-strip span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.procurement-status-strip strong {
+  color: var(--ink);
+  font-size: 24px;
+}
+
+.procurement-status-strip small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .procurement-grid {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.1fr);
@@ -1314,6 +1395,25 @@ textarea {
   margin: 0;
   color: var(--muted);
   line-height: 1.4;
+}
+
+.branch-contact-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.branch-contact-row span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .material-flow-row {
@@ -1501,6 +1601,112 @@ textarea {
   text-overflow: ellipsis;
 }
 
+.report-cockpit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 0.95fr);
+  gap: 18px;
+  align-items: end;
+}
+
+.report-cockpit p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.report-control-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.report-control-bar label {
+  display: grid;
+  gap: 5px;
+}
+
+.report-control-bar span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.report-template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.report-template-card {
+  box-shadow: none;
+}
+
+.report-template-card h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.segmented-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.segmented-filter button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.segmented-filter button.active {
+  border-color: rgba(6, 182, 200, 0.42);
+  background: var(--cyan-soft);
+  color: var(--cyan-dark);
+}
+
+.access-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.8fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.access-row > div {
+  min-width: 0;
+}
+
+.access-row strong,
+.access-row p,
+.access-scope span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-row p,
+.access-scope span:last-child {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.access-scope {
+  display: grid;
+  gap: 5px;
+}
+
 .bar {
   height: 10px;
   background: var(--surface-strong);
@@ -1593,6 +1799,20 @@ textarea {
   background: var(--surface-soft);
 }
 
+.refined-empty {
+  min-height: 160px;
+  padding: 22px;
+}
+
+.refined-empty strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.refined-empty .secondary-button {
+  margin-top: 4px;
+}
+
 .media-result-stack {
   display: grid;
   gap: 12px;
@@ -1669,6 +1889,21 @@ textarea {
   align-items: flex-start;
   gap: 14px;
   margin-bottom: 16px;
+}
+
+.modal-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.modal-insight-grid .field {
+  background: #ffffff;
 }
 
 .archive-summary {
@@ -1772,7 +2007,13 @@ textarea {
   .evidence-split,
   .partner-grid,
   .procurement-grid,
-  .procurement-flow-map {
+  .procurement-flow-map,
+  .procurement-status-strip,
+  .access-summary-grid,
+  .report-cockpit,
+  .report-control-bar,
+  .report-template-grid,
+  .modal-insight-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1839,6 +2080,14 @@ textarea {
 
   .inventory-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .access-row {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-order-dock {
+    margin-inline: -2px;
   }
 
   .flow-route {

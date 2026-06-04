@@ -1936,6 +1936,7 @@ function SalesRepPortal({
   const [evidenceResult, setEvidenceResult] = useState<MediaLabResult | null>(null);
   const [orderSearch, setOrderSearch] = useState("");
   const [selectedOrderSkuId, setSelectedOrderSkuId] = useState(skus[0]?.id ?? "");
+  const [orderQuantity, setOrderQuantity] = useState("12");
   const outletOptions = outlets.length ? outlets.map((outlet) => outlet.name) : ["Unassigned"];
   const brandOptions = brands.length ? brands.map((brand) => brand.name) : ["Unassigned"];
   const selectedOrderSku = skus.find((sku) => sku.id === selectedOrderSkuId) ?? skus[0];
@@ -1977,6 +1978,7 @@ function SalesRepPortal({
       await onCreateOrder(form);
       formElement.reset();
       setSelectedOrderSkuId(skus[0]?.id ?? "");
+      setOrderQuantity("12");
       setOrderSearch("");
       setNotice({ type: "success", message: "Order intent captured." });
     } catch (error) {
@@ -2111,7 +2113,7 @@ function SalesRepPortal({
                         </span>
                         <span className="sales-product-copy">
                           <strong>{sku.name}</strong>
-                          <small>{sku.brand} · {sku.unit}</small>
+                          <small>{sku.brand} - {sku.unit}</small>
                           <span>{sku.code || "No SKU code"}</span>
                         </span>
                         <em>{money(sku.mrp)}</em>
@@ -2122,17 +2124,16 @@ function SalesRepPortal({
                     )}
                     {!skus.length && <p className="empty-state">No products are available for order capture.</p>}
                   </div>
-                  <Input name="quantity" label="Quantity" type="number" placeholder="24" />
+                  <div className="form-field">
+                    <label htmlFor="sales-order-quantity">Quantity</label>
+                    <input id="sales-order-quantity" name="quantity" type="number" value={orderQuantity} min="1" onChange={(event) => setOrderQuantity(event.target.value)} placeholder="24" required />
+                  </div>
                   <Input name="unitPrice" label="Unit price" type="number" placeholder="Auto from MRP" required={false} />
                   <Input name="expectedValue" label="Order value" type="number" placeholder="Auto from quantity" required={false} />
                   <Input name="expectedDeliveryDate" label="Expected delivery" type="date" required={false} />
                   <div className="quantity-chip-row wide" aria-label="Quick quantities">
                     {[6, 12, 24, 48].map((quantity) => (
-                      <button type="button" className="link-button" key={quantity} onClick={(event) => {
-                        const form = event.currentTarget.form;
-                        const quantityInput = form?.elements.namedItem("quantity") as HTMLInputElement | null;
-                        if (quantityInput) quantityInput.value = String(quantity);
-                      }}>
+                      <button type="button" className="link-button" key={quantity} onClick={() => setOrderQuantity(String(quantity))}>
                         {quantity} units
                       </button>
                     ))}
@@ -2141,10 +2142,20 @@ function SalesRepPortal({
                     <div className="selected-order-summary wide">
                       <span>Selected</span>
                       <strong>{selectedOrderSku.name}</strong>
-                      <small>{selectedOrderSku.code || "No SKU code"} · {selectedOrderSku.brand} · {money(selectedOrderSku.mrp)}</small>
+                      <small>{selectedOrderSku.code || "No SKU code"} - {selectedOrderSku.brand} - {money(selectedOrderSku.mrp)}</small>
                     </div>
                   )}
                 </div>
+                {selectedOrderSku && (
+                  <div className="sales-order-dock">
+                    <div>
+                      <span>Current order</span>
+                      <strong>{orderQuantity || 0} x {selectedOrderSku.name}</strong>
+                      <small>{money((Number(orderQuantity) || 0) * selectedOrderSku.mrp)} estimated value</small>
+                    </div>
+                    <button className="approve" disabled={isSubmitting} type="submit">Capture</button>
+                  </div>
+                )}
                 <div className="action-row">
                   <button className="approve" disabled={isSubmitting} type="submit">Capture Order</button>
                 </div>
@@ -2400,6 +2411,16 @@ function Field({ label, value }: { label: string; value: string | number }) {
     <div className="field">
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function EmptyState({ title, detail, actionLabel, onAction }: { title: string; detail: string; actionLabel?: string; onAction?: () => void }) {
+  return (
+    <div className="empty-state refined-empty">
+      <strong>{title}</strong>
+      <span>{detail}</span>
+      {actionLabel && onAction && <button className="secondary-button" type="button" onClick={onAction}>{actionLabel}</button>}
     </div>
   );
 }
@@ -2753,6 +2774,9 @@ function ProcurementFlowView({
   const outboundFlows = materialFlows.filter((flow) => flow.movementType !== "Inbound procurement");
   const totalInboundValue = inboundFlows.reduce((sum, flow) => sum + flow.value, 0);
   const totalOutboundValue = outboundFlows.reduce((sum, flow) => sum + flow.value, 0);
+  const pendingPurchaseOrders = purchaseOrders.filter((purchaseOrder) => !["Received", "Cancelled"].includes(purchaseOrder.status));
+  const pendingReceipts = goodsReceipts.filter((receipt) => !["Posted", "Cancelled"].includes(receipt.status));
+  const openSupplierPayables = supplierPayables.filter((payable) => !["Paid", "Written off"].includes(payable.status));
 
   return (
     <section className="procurement-layout">
@@ -2801,6 +2825,29 @@ function ProcurementFlowView({
         <Metric label="Reorder alerts" value={inventoryPositions.filter((item) => item.status === "Reorder due").length} detail="SKUs below reorder threshold" />
       </section>
 
+      <section className="procurement-status-strip">
+        <div>
+          <span>Open POs</span>
+          <strong>{pendingPurchaseOrders.length}</strong>
+          <small>Awaiting confirmation or receipt</small>
+        </div>
+        <div>
+          <span>GRNs in progress</span>
+          <strong>{pendingReceipts.length}</strong>
+          <small>Draft, received, or quality hold</small>
+        </div>
+        <div>
+          <span>Supplier payables</span>
+          <strong>{openSupplierPayables.length}</strong>
+          <small>Pending, partial, overdue, or disputed</small>
+        </div>
+        <div>
+          <span>Material movements</span>
+          <strong>{materialFlows.length}</strong>
+          <small>Inbound and outbound register</small>
+        </div>
+      </section>
+
       <section className="procurement-grid">
         <article className="panel">
           <div className="panel-heading">
@@ -2815,7 +2862,7 @@ function ProcurementFlowView({
                 <div className="queue-top">
                   <div>
                     <strong>{office.officeName}</strong>
-                    <p>{office.brand} · {office.region}</p>
+                    <p>{office.brand} - {office.region}</p>
                   </div>
                   <div className="record-meta">
                     <span className={`tag ${office.status === "Primary" ? "green" : ""}`}>{office.status}</span>
@@ -2828,6 +2875,10 @@ function ProcurementFlowView({
                   <Field label="Lead time" value={`${office.leadTimeDays} days`} />
                   <Field label="Mode" value={office.replenishmentMode} />
                   <Field label="Contact" value={office.contact} />
+                </div>
+                <div className="branch-contact-row">
+                  <span>{office.phone || "No phone"}</span>
+                  <span>{office.email || "No email"}</span>
                 </div>
                 <p>{office.procurementRole}</p>
               </article>
@@ -2849,16 +2900,16 @@ function ProcurementFlowView({
                 <div>
                   <span className="tag blue">{flow.movementType}</span>
                   <strong>{flow.sku}</strong>
-                  <small>{flow.brand}{flow.skuCode ? ` · ${flow.skuCode}` : ""}</small>
+                  <small>{flow.brand}{flow.skuCode ? ` - ${flow.skuCode}` : ""}</small>
                 </div>
                 <div className="flow-route">
                   <span>{flow.fromLocation}</span>
-                  <b>→</b>
+                  <b>to</b>
                   <span>{flow.toLocation}</span>
                 </div>
                 <div className="flow-value">
                   <strong>{money(flow.value)}</strong>
-                  <small>{flow.quantity} units · {flow.status}</small>
+                  <small>{flow.quantity} units - {flow.status}</small>
                   {isUuid(flow.id) && <button className="link-button" onClick={() => onEditMovement(flow)}>Edit</button>}
                   {isUuid(flow.id) && <button className="link-button" onClick={() => onArchive("materialFlow", flow.id, flow.documentRef || flow.sku, "The movement will be marked archived. Inventory calculations may still need review if this movement affected stock.")}>Archive</button>}
                 </div>
@@ -2882,7 +2933,7 @@ function ProcurementFlowView({
               <article className="inventory-row" key={item.id}>
                 <div>
                   <strong>{item.sku}</strong>
-                  <small>{item.brand}{item.skuCode ? ` · ${item.skuCode}` : ""}</small>
+                  <small>{item.brand}{item.skuCode ? ` - ${item.skuCode}` : ""}</small>
                 </div>
                 <div className="inventory-metrics">
                   <Field label="Available" value={item.available} />
@@ -2910,11 +2961,11 @@ function ProcurementFlowView({
                 <div>
                   <span className="tag blue">{purchaseOrder.status}</span>
                   <strong>{purchaseOrder.poNumber}</strong>
-                  <small>{purchaseOrder.brand} · {purchaseOrder.officeName}</small>
+                  <small>{purchaseOrder.brand} - {purchaseOrder.officeName}</small>
                 </div>
                 <div className="flow-route">
                   <span>{purchaseOrder.officeName}</span>
-                  <b>→</b>
+                  <b>to</b>
                   <span>Distributor warehouse</span>
                 </div>
                 <div className="flow-value">
@@ -3085,7 +3136,7 @@ function PartnersView({
                   }]).slice(0, 3).map((office) => (
                     <span key={office.id}>
                       <strong>{office.officeName}</strong>
-                      {office.city} · {office.region}
+                      {office.city} - {office.region}
                     </span>
                   ))}
                 </div>
@@ -3152,25 +3203,52 @@ function OpsView({ salesmen, onAdd, onEdit, onBulkImport }: { salesmen: Salesman
 }
 
 function UsersView({ users, onAdd, onEdit, onBulkImport }: { users: AppUserRow[]; onAdd: () => void; onEdit: (user: AppUserRow) => void; onBulkImport: () => void }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const [role, setRole] = useState("all");
+  const visibleUsers = users.filter((user) =>
+    (status === "all" || user.status === status) &&
+    (role === "all" || user.roleLabel === role) &&
+    matchesSearch([user.name, user.email, user.phone, user.roleLabel, user.territory], search)
+  );
+  const activeUsers = users.filter((user) => user.status === "Active").length;
+  const fieldUsers = users.filter((user) => user.role === "field_executive").length;
+
   return (
-    <CrudPanel title="Users & Login Access" description="Admins create and manage admin, manager, sales executive, and brand partner logins." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add User">
-      {users.map((user) => (
-        <article className="task-row" key={user.id}>
-          <div className="queue-top">
-            <strong>{user.name}</strong>
-            <div className="inline-actions">
+    <section className="distribution-dashboard">
+      <section className="access-summary-grid">
+        <Metric label="Active users" value={activeUsers} detail={`${users.length} total login records`} />
+        <Metric label="Field team" value={fieldUsers} detail="Sales app users" />
+        <Metric label="Brand access" value={users.filter((user) => user.role.includes("brand_partner")).length} detail="Partner-facing accounts" />
+        <Metric label="Inactive" value={users.length - activeUsers} detail="Archived or paused access" />
+      </section>
+      <CrudPanel title="Users & Login Access" description="Operational account directory for admin, manager, field, finance, integration, and partner access." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add User" searchValue={search} onSearchChange={setSearch} searchPlaceholder="Search name, email, phone, role, territory" statusValue={status} statusOptions={uniqueOptions(users.map((user) => user.status))} onStatusChange={setStatus} resultCount={visibleUsers.length} totalCount={users.length}>
+        <div className="segmented-filter" aria-label="Role filter">
+          {uniqueOptions(users.map((user) => user.roleLabel)).map((option) => (
+            <button key={option} className={role === option ? "active" : ""} type="button" onClick={() => setRole(option)}>
+              {option === "all" ? "All roles" : option}
+            </button>
+          ))}
+        </div>
+        {visibleUsers.map((user) => (
+          <article className="access-row" key={user.id}>
+            <div>
+              <strong>{user.name}</strong>
+              <p>{user.email || "No email"} - {user.phone || "No phone"}</p>
+            </div>
+            <div className="access-scope">
               <span className="tag blue">{user.roleLabel}</span>
+              <span>{user.territory}</span>
+            </div>
+            <div className="inline-actions">
+              <span className={`tag ${user.status === "Active" ? "green" : "warn"}`}>{user.status}</span>
               <button className="link-button" onClick={() => onEdit(user)}>Edit</button>
             </div>
-          </div>
-          <p>{user.email || "No email"} - {user.phone || "No phone"}</p>
-          <div className="record-meta">
-            <span>{user.territory}</span>
-            <span className="tag">{user.status}</span>
-          </div>
-        </article>
-      ))}
-    </CrudPanel>
+          </article>
+        ))}
+        {!visibleUsers.length && <EmptyState title="No users match the current filters." detail="Clear the role, status, or search filter to review the full access directory." />}
+      </CrudPanel>
+    </section>
   );
 }
 
@@ -3578,26 +3656,113 @@ function CrudPanel({
 }
 
 function ReportsView() {
+  const reportTemplates = [
+    { title: "Weekly Brand Review", detail: "Coverage, SKU movement, orders, collections, and market intelligence.", cadence: "Weekly", owner: "Manager" },
+    { title: "Retailer Payment Risk", detail: "Ageing, promises, disputes, high-risk outlets, and collector ownership.", cadence: "Daily", owner: "Finance" },
+    { title: "Procurement Flow", detail: "POs, GRNs, inbound movement, branch lead times, and supplier payables.", cadence: "Weekly", owner: "Operations" },
+    { title: "Field Productivity", detail: "Visits, follow-ups, order conversion, evidence uploads, and pending tasks.", cadence: "Daily", owner: "Admin" }
+  ];
+  const drilldowns = [
+    { label: "Client performance", value: "Brand, territory, SKU", status: "Ready for export" },
+    { label: "Outlet universe", value: "Active, prospect, inactive", status: "Filtered dataset" },
+    { label: "Order to bill", value: "Intent, confirmed, billed", status: "Pipeline view" },
+    { label: "Receivables", value: "Due, overdue, disputed", status: "Finance view" }
+  ];
+
   return (
-    <section className="ops-grid">
-      <article className="panel">
-        <h2>Weekly Brand Report</h2>
-        <ol className="clean-list">
-          <li>Executive summary</li>
-          <li>Market coverage and outlet expansion</li>
-          <li>Sales, orders, SKU movement, and payment status</li>
-          <li>Retailer feedback, issues, and competitor intelligence</li>
-          <li>Recommended next actions</li>
-        </ol>
-      </article>
-      <article className="panel">
-        <h2>Approval Workflow</h2>
-        <div className="module-list">
-          <article className="module-card"><h3>Draft generated</h3><p>Weekly city expansion report.</p></article>
-          <article className="module-card"><h3>Manager review</h3><p>Requires approval before brand sharing.</p></article>
-          <article className="module-card"><h3>Exports</h3><p>PDF, CSV, and Excel-ready verified datasets.</p></article>
+    <section className="distribution-dashboard">
+      <article className="panel report-cockpit">
+        <div>
+          <p className="eyebrow">Reporting workspace</p>
+          <h2>Management reporting cockpit</h2>
+          <p>Prepare executive-ready views from verified operational records. Reports remain export-first, with the screen structured for filters, review, and partner sharing.</p>
+        </div>
+        <div className="report-control-bar">
+          <label>
+            <span>Period</span>
+            <select defaultValue="last-7">
+              <option value="last-7">Last 7 days</option>
+              <option value="last-30">Last 30 days</option>
+              <option value="month">This month</option>
+              <option value="custom">Custom range</option>
+            </select>
+          </label>
+          <label>
+            <span>Client</span>
+            <select defaultValue="all">
+              <option value="all">All clients</option>
+              <option value="nestle">Nestle</option>
+            </select>
+          </label>
+          <label>
+            <span>Output</span>
+            <select defaultValue="pdf">
+              <option value="pdf">PDF summary</option>
+              <option value="csv">CSV dataset</option>
+              <option value="xlsx">Excel workbook</option>
+            </select>
+          </label>
+          <button className="primary-button" type="button">Prepare Export</button>
         </div>
       </article>
+
+      <section className="metrics-grid">
+        <Metric label="Templates" value={reportTemplates.length} detail="Configured report views" />
+        <Metric label="Review queue" value="Manager" detail="Approval before sharing" />
+        <Metric label="Exports" value="PDF / CSV / XLSX" detail="Partner-ready formats" />
+        <Metric label="Drilldowns" value={drilldowns.length} detail="Operational lenses" />
+      </section>
+
+      <section className="admin-command-grid">
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Report Templates</h2>
+              <p>Reusable operating views for clients, finance, procurement, and field teams.</p>
+            </div>
+          </div>
+          <div className="report-template-grid">
+            {reportTemplates.map((template) => (
+              <article className="module-card report-template-card" key={template.title}>
+                <div className="queue-top">
+                  <h3>{template.title}</h3>
+                  <span className="tag blue">{template.cadence}</span>
+                </div>
+                <p>{template.detail}</p>
+                <div className="record-meta">
+                  <span>Owner: {template.owner}</span>
+                  <button className="link-button" type="button">Open</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Drill-Down Views</h2>
+          <div className="signal-list">
+            {drilldowns.map((item) => (
+              <article className="signal-row" key={item.label}>
+                <div>
+                  <strong>{item.label}</strong>
+                  <span>{item.value}</span>
+                </div>
+                <span className="tag">{item.status}</span>
+              </article>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel wide-panel">
+          <h2>Approval Workflow</h2>
+          <div className="module-list">
+            <article className="module-card"><h3>Draft</h3><p>Choose template, period, client, territory, and export format.</p></article>
+            <article className="module-card"><h3>Review</h3><p>Manager validates record quality, payment risk, and partner-safe notes.</p></article>
+            <article className="module-card"><h3>Share</h3><p>Export approved PDF, CSV, or Excel-ready datasets for the intended audience.</p></article>
+          </div>
+          <EmptyState title="Generated dashboards are not enabled yet." detail="This cockpit is ready for verified exports while live analytics, drill-through charts, and scheduled report jobs are connected later." />
+        </article>
+      </section>
     </section>
   );
 }
@@ -3999,6 +4164,22 @@ function MasterDataModal({
           </div>
           <button className="icon-button" onClick={onClose} title="Close">x</button>
         </div>
+        {type === "procurementOffice" && (
+          <div className="modal-insight-grid">
+            <Field label="Client" value={procurementOfficeValues?.brand ?? "Select brand"} />
+            <Field label="Branch role" value={procurementOfficeValues?.procurementRole ?? "Source / approval / supply"} />
+            <Field label="Lead time" value={procurementOfficeValues ? `${procurementOfficeValues.leadTimeDays} days` : "Set expected days"} />
+            <Field label="Replenishment" value={procurementOfficeValues?.replenishmentMode ?? "Direct / PO / warehouse"} />
+          </div>
+        )}
+        {type === "brand" && (
+          <div className="modal-insight-grid">
+            <Field label="Client status" value={brandValues?.status ?? "Active"} />
+            <Field label="Category" value={brandValues?.category ?? "Set category"} />
+            <Field label="Procurement owner" value={brandValues?.contact ?? "Primary contact"} />
+            <Field label="Branch setup" value="Add regional source offices after saving" />
+          </div>
+        )}
         <form className="master-form" onSubmit={onSubmit}>
           {initialValues?.id && <input type="hidden" name="id" value={initialValues.id} />}
           <div className="form-grid">
@@ -4178,7 +4359,7 @@ function MasterDataModal({
                         </span>
                         <span>
                           <strong>{sku.name}</strong>
-                          <small>{sku.brand} · {sku.code || "No SKU code"}</small>
+                          <small>{sku.brand} - {sku.code || "No SKU code"}</small>
                         </span>
                         <b>{money(sku.mrp)}</b>
                       </button>
