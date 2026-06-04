@@ -24,6 +24,13 @@ import type {
   VerificationDraftRecord
 } from "./types";
 
+type SupabaseMaybeError = {
+  code?: string;
+  message?: string;
+  details?: string | null;
+  hint?: string | null;
+};
+
 type OutletBrandJoin = {
   brands?: { name?: string | null } | { name?: string | null }[] | null;
 };
@@ -266,6 +273,19 @@ type AIProviderSettingsResult = {
   last_error: string | null;
   updated_at: string | null;
 };
+
+function isMissingRelationError(error?: SupabaseMaybeError | null) {
+  if (!error) return false;
+  const text = [error.message, error.details, error.hint].filter(Boolean).join(" ").toLowerCase();
+  return (
+    error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    error.code === "PGRST200" ||
+    text.includes("could not find the table") ||
+    text.includes("could not find a relationship") ||
+    text.includes("schema cache")
+  );
+}
 
 function displayStatus(status?: string | null): "Active" | "Prospect" | "Inactive" {
   if (status === "prospect") return "Prospect";
@@ -744,12 +764,12 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   if (paymentsResult.error) throw new Error(paymentsResult.error.message);
   if (ordersResult.error) throw new Error(ordersResult.error.message);
   if (billsResult.error) throw new Error(billsResult.error.message);
-  if (procurementOfficesResult.error && procurementOfficesResult.error.code !== "42P01") throw new Error(procurementOfficesResult.error.message);
-  if (materialFlowsResult.error && materialFlowsResult.error.code !== "42P01") throw new Error(materialFlowsResult.error.message);
-  if (purchaseOrdersResult.error && purchaseOrdersResult.error.code !== "42P01") throw new Error(purchaseOrdersResult.error.message);
-  if (goodsReceiptsResult.error && goodsReceiptsResult.error.code !== "42P01") throw new Error(goodsReceiptsResult.error.message);
-  if (supplierPayablesResult.error && supplierPayablesResult.error.code !== "42P01") throw new Error(supplierPayablesResult.error.message);
-  if (verificationDraftsResult.error && verificationDraftsResult.error.code !== "42P01") throw new Error(verificationDraftsResult.error.message);
+  if (procurementOfficesResult.error && !isMissingRelationError(procurementOfficesResult.error)) throw new Error(procurementOfficesResult.error.message);
+  if (materialFlowsResult.error && !isMissingRelationError(materialFlowsResult.error)) throw new Error(materialFlowsResult.error.message);
+  if (purchaseOrdersResult.error && !isMissingRelationError(purchaseOrdersResult.error)) throw new Error(purchaseOrdersResult.error.message);
+  if (goodsReceiptsResult.error && !isMissingRelationError(goodsReceiptsResult.error)) throw new Error(goodsReceiptsResult.error.message);
+  if (supplierPayablesResult.error && !isMissingRelationError(supplierPayablesResult.error)) throw new Error(supplierPayablesResult.error.message);
+  if (verificationDraftsResult.error && !isMissingRelationError(verificationDraftsResult.error)) throw new Error(verificationDraftsResult.error.message);
   if (metaIntegrationResult.error) throw new Error(metaIntegrationResult.error.message);
   if (aiProviderResult.error) throw new Error(aiProviderResult.error.message);
 
