@@ -65,6 +65,7 @@ type ModalType = "outlet" | "brand" | "procurementOffice" | "materialFlow" | "pu
 type BulkImportType = Exclude<ModalType, null>;
 type IntegrationNotice = { type: "success" | "error"; message: string };
 type SalesWorkflow = "visit" | "order" | "payment" | "evidence";
+type ArchiveRequest = { type: Exclude<ModalType, null>; id: string; label: string; impact: string };
 type EditableMasterData =
   | { type: "outlet"; record: OutletRow }
   | { type: "brand"; record: BrandOption }
@@ -247,6 +248,16 @@ function money(value: number) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 }
 
+function matchesSearch(values: Array<string | number | undefined>, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+  return values.some((value) => String(value ?? "").toLowerCase().includes(normalizedQuery));
+}
+
+function uniqueOptions(values: string[]) {
+  return ["all", ...Array.from(new Set(values.filter(Boolean)))];
+}
+
 function skuOption(sku: SkuRow) {
   return sku.code ? `${sku.name} (${sku.code})` : sku.name;
 }
@@ -421,6 +432,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   const [editingItem, setEditingItem] = useState<EditableMasterData | null>(null);
   const [bulkImportType, setBulkImportType] = useState<BulkImportType | null>(null);
   const [bulkImportMessage, setBulkImportMessage] = useState("");
+  const [archiveRequest, setArchiveRequest] = useState<ArchiveRequest | null>(null);
   const [partnerFilter, setPartnerFilter] = useState("all");
   const [messageText, setMessageText] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -570,11 +582,17 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     setModalType(item.type);
   }
 
-  async function archiveMasterRecord(type: Exclude<ModalType, null>, id: string) {
+  function requestArchive(type: Exclude<ModalType, null>, id: string, label: string, impact: string) {
+    if (!isUuid(id)) return;
+    setArchiveRequest({ type, id, label, impact });
+  }
+
+  async function archiveMasterRecord(type: Exclude<ModalType, null>, id: string, reason?: string) {
     if (!isUuid(id)) return;
     const form = new FormData();
     form.set("type", type);
     form.set("id", id);
+    form.set("reason", reason ?? "");
     await actions.archiveRecord(form);
 
     if (type === "brand") setBrands((current) => current.map((brand) => (brand.id === id ? { ...brand, status: "Inactive" } : brand)));
@@ -592,6 +610,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     if (type === "payment") setPayments((current) => current.map((payment) => (payment.id === id ? { ...payment, status: "Written off" } : payment)));
     if (type === "order") setOrders((current) => current.map((order) => (order.id === id ? { ...order, status: "Cancelled" } : order)));
     if (type === "bill") setBills((current) => current.map((bill) => (bill.id === id ? { ...bill, paymentStatus: "Written off" } : bill)));
+    setArchiveRequest(null);
   }
 
   function verifyRecord(recordId: string) {
@@ -1204,7 +1223,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Create Follow-Up", action: () => openCreate("task") },
       { label: "Bulk Import", action: () => openBulkImport("payment") }
     ],
-    reports: [{ label: "Generate Report", action: () => setActiveView("reports") }],
+    reports: [{ label: "Open Templates", action: () => setActiveView("reports") }],
     partners: [
       { label: "Add Client", action: () => openCreate("brand") },
       { label: "Add Product", action: () => openCreate("sku") },
@@ -1335,8 +1354,8 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         )}
 
         {activeView === "media" && <MediaLabView aiProvider={aiProvider} />}
-        {activeView === "outlets" && <OutletsView outlets={outlets} onAdd={() => openCreate("outlet")} onEdit={(outlet) => openEdit({ type: "outlet", record: outlet })} onBulkImport={() => openBulkImport("outlet")} />}
-        {activeView === "products" && <ProductsView skus={skus} onAdd={() => openCreate("sku")} onEdit={(sku) => openEdit({ type: "sku", record: sku })} onArchive={(sku) => archiveMasterRecord("sku", sku.id)} onBulkImport={() => openBulkImport("sku")} />}
+        {activeView === "outlets" && <OutletsView outlets={outlets} onAdd={() => openCreate("outlet")} onEdit={(outlet) => openEdit({ type: "outlet", record: outlet })} onArchive={(outlet) => requestArchive("outlet", outlet.id, outlet.name, "The outlet will be marked inactive while visit, order, and payment history stays available.")} onBulkImport={() => openBulkImport("outlet")} />}
+        {activeView === "products" && <ProductsView skus={skus} onAdd={() => openCreate("sku")} onEdit={(sku) => openEdit({ type: "sku", record: sku })} onArchive={(sku) => requestArchive("sku", sku.id, sku.name, "The product will be marked inactive and removed from active order capture lists.")} onBulkImport={() => openBulkImport("sku")} />}
         {activeView === "procurement" && (
           <ProcurementFlowView
             brands={brands}
@@ -1359,22 +1378,22 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
             onEditGoodsReceipt={(receipt) => openEdit({ type: "goodsReceipt", record: receipt })}
             onAddSupplierPayable={() => openCreate("supplierPayable")}
             onEditSupplierPayable={(payable) => openEdit({ type: "supplierPayable", record: payable })}
-            onArchive={archiveMasterRecord}
+            onArchive={(type, id, label, impact) => requestArchive(type, id, label, impact)}
             onBulkImportOffice={() => openBulkImport("procurementOffice")}
             onBulkImportMovement={() => openBulkImport("materialFlow")}
           />
         )}
         {activeView === "partners" && (
-          <PartnersView brands={brands} procurementOffices={procurementOffices} skus={skus} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onAddSku={() => openCreate("sku")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onArchive={(brand) => archiveMasterRecord("brand", brand.id)} onBulkImport={() => openBulkImport("brand")} />
+          <PartnersView brands={brands} procurementOffices={procurementOffices} skus={skus} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onAddSku={() => openCreate("sku")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onArchive={(brand) => requestArchive("brand", brand.id, brand.name, "The client will be marked inactive while historical sales and procurement records remain available.")} onBulkImport={() => openBulkImport("brand")} />
         )}
         {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => openCreate("salesman")} onEdit={(person) => openEdit({ type: "salesman", record: person })} onBulkImport={() => openBulkImport("salesman")} />}
         {activeView === "users" && <UsersView users={users} onAdd={() => openCreate("user")} onEdit={(user) => openEdit({ type: "user", record: user })} onBulkImport={() => openBulkImport("user")} />}
-        {activeView === "tasks" && <TasksView tasks={tasks} onAdd={() => openCreate("task")} onEdit={(task) => openEdit({ type: "task", record: task })} onBulkImport={() => openBulkImport("task")} />}
+        {activeView === "tasks" && <TasksView tasks={tasks} payments={payments} onAdd={() => openCreate("task")} onEdit={(task) => openEdit({ type: "task", record: task })} onBulkImport={() => openBulkImport("task")} />}
         {activeView === "territories" && <TerritoriesView territories={territories} onAdd={() => openCreate("territory")} onEdit={(territory) => openEdit({ type: "territory", record: territory })} onBulkImport={() => openBulkImport("territory")} />}
         {activeView === "finance" && <FinanceView payments={payments} tasks={tasks} outlets={outlets} salesmen={salesmen} onAddPayment={() => openCreate("payment")} onCreateTask={() => openCreate("task")} onBulkImport={() => openBulkImport("payment")} />}
-        {activeView === "payments" && <PaymentsView payments={payments} onAdd={() => openCreate("payment")} onEdit={(payment) => openEdit({ type: "payment", record: payment })} onBulkImport={() => openBulkImport("payment")} />}
-        {activeView === "orders" && <OrdersView orders={orders} onAdd={() => openCreate("order")} onEdit={(order) => openEdit({ type: "order", record: order })} onArchive={(order) => archiveMasterRecord("order", order.id)} onBulkImport={() => openBulkImport("order")} />}
-        {activeView === "bills" && <BillsView bills={bills} onAdd={() => openCreate("bill")} onEdit={(bill) => openEdit({ type: "bill", record: bill })} onBulkImport={() => openBulkImport("bill")} />}
+        {activeView === "payments" && <PaymentsView payments={payments} onAdd={() => openCreate("payment")} onEdit={(payment) => openEdit({ type: "payment", record: payment })} onArchive={(payment) => requestArchive("payment", payment.id, `${payment.outlet} - ${payment.brand}`, "The payment record will be marked settled or inactive according to the current status while collection history remains visible.")} onBulkImport={() => openBulkImport("payment")} />}
+        {activeView === "orders" && <OrdersView orders={orders} onAdd={() => openCreate("order")} onEdit={(order) => openEdit({ type: "order", record: order })} onArchive={(order) => requestArchive("order", order.id, `${order.outlet} - ${order.sku}`, "The order will be cancelled, but the audit trail and related records remain visible.")} onBulkImport={() => openBulkImport("order")} />}
+        {activeView === "bills" && <BillsView bills={bills} onAdd={() => openCreate("bill")} onEdit={(bill) => openEdit({ type: "bill", record: bill })} onArchive={(bill) => requestArchive("bill", bill.id, bill.billNumber, "The bill will be written off or closed without removing invoice history from the account view.")} onBulkImport={() => openBulkImport("bill")} />}
         {activeView === "reports" && <ReportsView />}
         {activeView === "crm-sync" && <CRMSyncView brands={brands} outlets={outlets} skus={skus} payments={payments} orders={orders} metaIntegration={metaIntegration} aiProvider={aiProvider} />}
         {activeView === "integrations" && (
@@ -1419,6 +1438,13 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           }}
           onDownload={() => downloadTemplate(bulkImportType)}
           onSubmit={handleBulkImport}
+        />
+      )}
+      {archiveRequest && (
+        <ArchiveConfirmModal
+          request={archiveRequest}
+          onCancel={() => setArchiveRequest(null)}
+          onConfirm={(reason) => archiveMasterRecord(archiveRequest.type, archiveRequest.id, reason)}
         />
       )}
     </div>
@@ -1865,7 +1891,7 @@ function LoginScreen({ users, error, onLogin }: { users: AppUserRow[]; error: st
           <button className="approve" type="submit">Login</button>
         </form>
         <div className="login-hints">
-          <strong>MVP access rule</strong>
+          <strong>Demo access rule</strong>
           <span>Use the user email/phone/name and the last 4 digits of that user's phone as the access code.</span>
           {demoAdmin && <span>Admin example: {demoAdmin.email || demoAdmin.phone} / {loginCodeFor(demoAdmin)}</span>}
           {demoManager && <span>Manager example: {demoManager.email || demoManager.phone} / {loginCodeFor(demoManager)}</span>}
@@ -2537,7 +2563,14 @@ function ResultBlock({ title, value }: { title: string; value: string }) {
   );
 }
 
-function OutletsView({ outlets, onAdd, onEdit, onBulkImport }: { outlets: OutletRow[]; onAdd: () => void; onEdit: (outlet: OutletRow) => void; onBulkImport: () => void }) {
+function OutletsView({ outlets, onAdd, onEdit, onArchive, onBulkImport }: { outlets: OutletRow[]; onAdd: () => void; onEdit: (outlet: OutletRow) => void; onArchive: (outlet: OutletRow) => void; onBulkImport: () => void }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const visibleOutlets = outlets.filter((outlet) =>
+    (status === "all" || outlet.status === status) &&
+    matchesSearch([outlet.name, outlet.city, outlet.channel, outlet.brand, outlet.territory, outlet.assignedSalesman, outlet.owner, outlet.phone], search)
+  );
+
   return (
     <section className="table-layout">
       <div className="panel">
@@ -2555,6 +2588,21 @@ function OutletsView({ outlets, onAdd, onEdit, onBulkImport }: { outlets: Outlet
             </button>
           </div>
         </div>
+        <div className="list-toolbar">
+          <label className="toolbar-search">
+            <span>Search</span>
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search outlet, city, brand, territory, rep" type="search" />
+          </label>
+          <label className="toolbar-filter">
+            <span>Status</span>
+            <select value={status} onChange={(event) => setStatus(event.target.value)}>
+              {uniqueOptions(outlets.map((outlet) => outlet.status)).map((option) => (
+                <option key={option} value={option}>{option === "all" ? "All statuses" : option}</option>
+              ))}
+            </select>
+          </label>
+          <span className="toolbar-count">{visibleOutlets.length} of {outlets.length}</span>
+        </div>
         <div className="data-table">
           <div className="table-row outlet-row header">
             <span>Outlet</span>
@@ -2566,7 +2614,7 @@ function OutletsView({ outlets, onAdd, onEdit, onBulkImport }: { outlets: Outlet
             <span>Status</span>
             <span>Action</span>
           </div>
-          {outlets.map((outlet) => (
+          {visibleOutlets.map((outlet) => (
             <div className="table-row outlet-row" key={outlet.id}>
               <strong>{outlet.name}</strong>
               <span>{outlet.city}</span>
@@ -2575,11 +2623,15 @@ function OutletsView({ outlets, onAdd, onEdit, onBulkImport }: { outlets: Outlet
               <span>{outlet.territory}</span>
               <span>{outlet.assignedSalesman}</span>
               <span className={`tag ${outlet.status === "Prospect" ? "warn" : ""}`}>{outlet.status}</span>
-              <button className="link-button" onClick={() => onEdit(outlet)}>
-                Edit
-              </button>
+              <div className="inline-actions">
+                <button className="link-button" onClick={() => onEdit(outlet)}>
+                  Edit
+                </button>
+                {isUuid(outlet.id) && <button className="link-button" onClick={() => onArchive(outlet)}>Archive</button>}
+              </div>
             </div>
           ))}
+          {!visibleOutlets.length && <p className="empty-state">No outlets match the current filters.</p>}
         </div>
       </div>
     </section>
@@ -2587,10 +2639,31 @@ function OutletsView({ outlets, onAdd, onEdit, onBulkImport }: { outlets: Outlet
 }
 
 function ProductsView({ skus, onAdd, onEdit, onArchive, onBulkImport }: { skus: SkuRow[]; onAdd: () => void; onEdit: (sku: SkuRow) => void; onArchive: (sku: SkuRow) => void; onBulkImport: () => void }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const visibleSkus = skus.filter((sku) =>
+    (status === "all" || sku.status === status) &&
+    matchesSearch([sku.name, sku.code, sku.brand, sku.category, sku.unit, sku.mrp], search)
+  );
+
   return (
-    <CrudPanel title="Product Catalog" description="A compact SKU catalog for order capture, price checks, pack details, and client movement." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Product">
+    <CrudPanel
+      title="Product Catalog"
+      description="A compact SKU catalog for order capture, price checks, pack details, and client movement."
+      onAdd={onAdd}
+      onBulkImport={onBulkImport}
+      addLabel="Add Product"
+      searchValue={search}
+      onSearchChange={setSearch}
+      searchPlaceholder="Search product, SKU code, brand, category"
+      statusValue={status}
+      statusOptions={uniqueOptions(skus.map((sku) => sku.status))}
+      onStatusChange={setStatus}
+      resultCount={visibleSkus.length}
+      totalCount={skus.length}
+    >
       <div className="product-market-grid">
-        {skus.map((sku) => (
+        {visibleSkus.map((sku) => (
           <article className="product-card" key={sku.id}>
             <div className="product-media">
               {sku.imageUrl ? (
@@ -2622,7 +2695,7 @@ function ProductsView({ skus, onAdd, onEdit, onArchive, onBulkImport }: { skus: 
           </article>
         ))}
       </div>
-      {!skus.length && <p className="empty-state">No products or SKUs added yet.</p>}
+      {!visibleSkus.length && <p className="empty-state">{skus.length ? "No products match the current filters." : "No products or SKUs added yet."}</p>}
     </CrudPanel>
   );
 }
@@ -2672,7 +2745,7 @@ function ProcurementFlowView({
   onEditGoodsReceipt: (receipt: GoodsReceiptRow) => void;
   onAddSupplierPayable: () => void;
   onEditSupplierPayable: (payable: SupplierPayableRow) => void;
-  onArchive: (type: Exclude<ModalType, null>, id: string) => void;
+  onArchive: (type: Exclude<ModalType, null>, id: string, label: string, impact: string) => void;
   onBulkImportOffice: () => void;
   onBulkImportMovement: () => void;
 }) {
@@ -2747,7 +2820,7 @@ function ProcurementFlowView({
                   <div className="record-meta">
                     <span className={`tag ${office.status === "Primary" ? "green" : ""}`}>{office.status}</span>
                     {isUuid(office.id) && <button className="link-button" onClick={() => onEditOffice(office)}>Edit</button>}
-                    {isUuid(office.id) && <button className="link-button" onClick={() => onArchive("procurementOffice", office.id)}>Archive</button>}
+                    {isUuid(office.id) && <button className="link-button" onClick={() => onArchive("procurementOffice", office.id, office.officeName, "The source office will be marked inactive and hidden from active procurement choices.")}>Archive</button>}
                   </div>
                 </div>
                 <div className="field-grid">
@@ -2787,7 +2860,7 @@ function ProcurementFlowView({
                   <strong>{money(flow.value)}</strong>
                   <small>{flow.quantity} units · {flow.status}</small>
                   {isUuid(flow.id) && <button className="link-button" onClick={() => onEditMovement(flow)}>Edit</button>}
-                  {isUuid(flow.id) && <button className="link-button" onClick={() => onArchive("materialFlow", flow.id)}>Archive</button>}
+                  {isUuid(flow.id) && <button className="link-button" onClick={() => onArchive("materialFlow", flow.id, flow.documentRef || flow.sku, "The movement will be marked archived. Inventory calculations may still need review if this movement affected stock.")}>Archive</button>}
                 </div>
               </article>
             ))}
@@ -2848,7 +2921,7 @@ function ProcurementFlowView({
                   <strong>{money(purchaseOrder.totalValue)}</strong>
                   <small>{purchaseOrder.expectedDate}</small>
                   {isUuid(purchaseOrder.id) && <button className="link-button" onClick={() => onEditPurchaseOrder(purchaseOrder)}>Edit</button>}
-                  {isUuid(purchaseOrder.id) && <button className="link-button" onClick={() => onArchive("purchaseOrder", purchaseOrder.id)}>Archive</button>}
+                  {isUuid(purchaseOrder.id) && <button className="link-button" onClick={() => onArchive("purchaseOrder", purchaseOrder.id, purchaseOrder.poNumber, "The purchase order will be cancelled while linked receipts and payables remain visible.")}>Archive</button>}
                 </div>
               </article>
             ))}
@@ -2882,7 +2955,7 @@ function ProcurementFlowView({
                 <div className="flow-value">
                   <strong>{receipt.receivedDate}</strong>
                   {isUuid(receipt.id) && <button className="link-button" onClick={() => onEditGoodsReceipt(receipt)}>Edit</button>}
-                  {isUuid(receipt.id) && <button className="link-button" onClick={() => onArchive("goodsReceipt", receipt.id)}>Archive</button>}
+                  {isUuid(receipt.id) && <button className="link-button" onClick={() => onArchive("goodsReceipt", receipt.id, receipt.receiptNumber, "The goods receipt will be cancelled. Review linked inbound movements if stock was already posted.")}>Archive</button>}
                 </div>
               </article>
             ))}
@@ -2915,7 +2988,7 @@ function ProcurementFlowView({
                   <strong>{money(Math.max(payable.amountDue - payable.amountPaid, 0))}</strong>
                   <small>{money(payable.amountPaid)} paid of {money(payable.amountDue)}</small>
                   {isUuid(payable.id) && <button className="link-button" onClick={() => onEditSupplierPayable(payable)}>Edit</button>}
-                  {isUuid(payable.id) && <button className="link-button" onClick={() => onArchive("supplierPayable", payable.id)}>Archive</button>}
+                  {isUuid(payable.id) && <button className="link-button" onClick={() => onArchive("supplierPayable", payable.id, payable.invoiceNumber, "The supplier payable will be written off and remain in finance history.")}>Archive</button>}
                 </div>
               </article>
             ))}
@@ -3101,7 +3174,15 @@ function UsersView({ users, onAdd, onEdit, onBulkImport }: { users: AppUserRow[]
   );
 }
 
-function TasksView({ tasks, onAdd, onEdit, onBulkImport }: { tasks: TaskRow[]; onAdd: () => void; onEdit: (task: TaskRow) => void; onBulkImport: () => void }) {
+function TasksView({ tasks, payments, onAdd, onEdit, onBulkImport }: { tasks: TaskRow[]; payments: PaymentRow[]; onAdd: () => void; onEdit: (task: TaskRow) => void; onBulkImport: () => void }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const visibleTasks = tasks.filter((task) =>
+    (status === "all" || task.status === status) &&
+    matchesSearch([task.title, task.description, task.taskType, task.assignedTo, task.outlet, task.brand, task.priority, task.dueDate], search)
+  );
+  const paymentRisks = payments.filter((payment) => ["High", "Critical"].includes(payment.riskLevel) || ["Overdue", "Disputed"].includes(payment.status));
+
   return (
     <section className="ops-grid">
       <article className="panel">
@@ -3119,8 +3200,23 @@ function TasksView({ tasks, onAdd, onEdit, onBulkImport }: { tasks: TaskRow[]; o
             </button>
           </div>
         </div>
+        <div className="list-toolbar">
+          <label className="toolbar-search">
+            <span>Search</span>
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search task, outlet, brand, owner" type="search" />
+          </label>
+          <label className="toolbar-filter">
+            <span>Status</span>
+            <select value={status} onChange={(event) => setStatus(event.target.value)}>
+              {uniqueOptions(tasks.map((task) => task.status)).map((option) => (
+                <option key={option} value={option}>{option === "all" ? "All statuses" : option}</option>
+              ))}
+            </select>
+          </label>
+          <span className="toolbar-count">{visibleTasks.length} of {tasks.length}</span>
+        </div>
         <div className="task-list">
-          {tasks.map((task) => (
+          {visibleTasks.map((task) => (
             <article className="task-row" key={task.id}>
               <div className="queue-top">
                 <strong>{task.title}</strong>
@@ -3141,17 +3237,26 @@ function TasksView({ tasks, onAdd, onEdit, onBulkImport }: { tasks: TaskRow[]; o
               </div>
             </article>
           ))}
+          {!visibleTasks.length && <p className="empty-state">No tasks match the current filters.</p>}
         </div>
       </article>
       <article className="panel">
-        <h2>Payment Risks</h2>
+        <h2>Payment Risk Queue</h2>
         <div className="task-list">
-          {["Raj Stores - overdue", "Fresh Basket - disputed"].map((payment) => (
-            <article className="task-row" key={payment}>
-              <strong>{payment}</strong>
-              <p>Requires admin follow-up.</p>
+          {paymentRisks.slice(0, 6).map((payment) => (
+            <article className="task-row" key={payment.id}>
+              <div className="queue-top">
+                <strong>{payment.outlet}</strong>
+                <span className="tag warn">{payment.riskLevel}</span>
+              </div>
+              <p>{payment.brand} - {money(Math.max(payment.amountDue - payment.amountCollected, 0))} pending</p>
+              <div className="record-meta">
+                <span>{payment.status}</span>
+                <span>Due {payment.dueDate}</span>
+              </div>
             </article>
           ))}
+          {!paymentRisks.length && <p className="empty-state">No high-risk payment records.</p>}
         </div>
       </article>
     </section>
@@ -3159,9 +3264,16 @@ function TasksView({ tasks, onAdd, onEdit, onBulkImport }: { tasks: TaskRow[]; o
 }
 
 function TerritoriesView({ territories, onAdd, onEdit, onBulkImport }: { territories: TerritoryRow[]; onAdd: () => void; onEdit: (territory: TerritoryRow) => void; onBulkImport: () => void }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const visibleTerritories = territories.filter((territory) =>
+    (status === "all" || territory.status === status) &&
+    matchesSearch([territory.name, territory.city, territory.state, territory.region], search)
+  );
+
   return (
-    <CrudPanel title="Territory Master" description="Cities, beats, and market expansion zones." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Territory">
-      {territories.map((territory) => (
+    <CrudPanel title="Territory Master" description="Cities, beats, and market expansion zones." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Territory" searchValue={search} onSearchChange={setSearch} searchPlaceholder="Search territory, city, state, region" statusValue={status} statusOptions={uniqueOptions(territories.map((territory) => territory.status))} onStatusChange={setStatus} resultCount={visibleTerritories.length} totalCount={territories.length}>
+      {visibleTerritories.map((territory) => (
         <article className="task-row" key={territory.id}>
           <div className="queue-top">
             <strong>{territory.name}</strong>
@@ -3175,23 +3287,32 @@ function TerritoriesView({ territories, onAdd, onEdit, onBulkImport }: { territo
           </div>
         </article>
       ))}
+      {!visibleTerritories.length && <p className="empty-state">No territories match the current filters.</p>}
     </CrudPanel>
   );
 }
 
-function PaymentsView({ payments, onAdd, onEdit, onBulkImport }: { payments: PaymentRow[]; onAdd: () => void; onEdit: (payment: PaymentRow) => void; onBulkImport: () => void }) {
+function PaymentsView({ payments, onAdd, onEdit, onArchive, onBulkImport }: { payments: PaymentRow[]; onAdd: () => void; onEdit: (payment: PaymentRow) => void; onArchive: (payment: PaymentRow) => void; onBulkImport: () => void }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const visiblePayments = payments.filter((payment) =>
+    (status === "all" || payment.status === status) &&
+    matchesSearch([payment.outlet, payment.brand, payment.amountDue, payment.amountCollected, payment.dueDate, payment.promisedPaymentDate, payment.paymentMode, payment.riskLevel], search)
+  );
+
   return (
-    <CrudPanel title="Payment Tracker" description="Dues, collections, promises, and risk levels." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Payment">
-      {payments.map((payment) => (
+    <CrudPanel title="Payment Tracker" description="Dues, collections, promises, and risk levels." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Payment" searchValue={search} onSearchChange={setSearch} searchPlaceholder="Search outlet, brand, amount, due date" statusValue={status} statusOptions={uniqueOptions(payments.map((payment) => payment.status))} onStatusChange={setStatus} resultCount={visiblePayments.length} totalCount={payments.length}>
+      {visiblePayments.map((payment) => (
         <article className="task-row" key={payment.id}>
           <div className="queue-top">
             <strong>{payment.outlet}</strong>
             <div className="inline-actions">
               <span className={`tag ${payment.riskLevel === "High" || payment.riskLevel === "Critical" ? "warn" : "blue"}`}>{payment.riskLevel}</span>
               <button className="link-button" onClick={() => onEdit(payment)}>Edit</button>
+              {isUuid(payment.id) && <button className="link-button" onClick={() => onArchive(payment)}>Archive</button>}
             </div>
           </div>
-          <p>{payment.brand} · {money(payment.amountCollected)} collected of {money(payment.amountDue)}</p>
+          <p>{payment.brand} - {money(payment.amountCollected)} collected of {money(payment.amountDue)}</p>
           <div className="record-meta">
             <span>Due {payment.dueDate}</span>
             <span>Promise {payment.promisedPaymentDate}</span>
@@ -3200,14 +3321,22 @@ function PaymentsView({ payments, onAdd, onEdit, onBulkImport }: { payments: Pay
           </div>
         </article>
       ))}
+      {!visiblePayments.length && <p className="empty-state">No payments match the current filters.</p>}
     </CrudPanel>
   );
 }
 
 function OrdersView({ orders, onAdd, onEdit, onArchive, onBulkImport }: { orders: OrderRow[]; onAdd: () => void; onEdit: (order: OrderRow) => void; onArchive: (order: OrderRow) => void; onBulkImport: () => void }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const visibleOrders = orders.filter((order) =>
+    (status === "all" || order.status === status) &&
+    matchesSearch([order.outlet, order.brand, order.sku, order.skuCode, order.quantity, order.expectedValue, order.expectedDeliveryDate], search)
+  );
+
   return (
-    <CrudPanel title="Orders" description="Outlet order intents captured by product/SKU, with brand derived from the SKU master." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Order">
-      {orders.map((order) => (
+    <CrudPanel title="Orders" description="Outlet order intents captured by product/SKU, with brand derived from the SKU master." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Order" searchValue={search} onSearchChange={setSearch} searchPlaceholder="Search outlet, SKU, brand, delivery date" statusValue={status} statusOptions={uniqueOptions(orders.map((order) => order.status))} onStatusChange={setStatus} resultCount={visibleOrders.length} totalCount={orders.length}>
+      {visibleOrders.map((order) => (
         <article className="task-row" key={order.id}>
           <div className="queue-top">
             <strong>{order.outlet}</strong>
@@ -3225,20 +3354,31 @@ function OrdersView({ orders, onAdd, onEdit, onArchive, onBulkImport }: { orders
           </div>
         </article>
       ))}
+      {!visibleOrders.length && <p className="empty-state">No orders match the current filters.</p>}
     </CrudPanel>
   );
 }
 
-function BillsView({ bills, onAdd, onEdit, onBulkImport }: { bills: BillRow[]; onAdd: () => void; onEdit: (bill: BillRow) => void; onBulkImport: () => void }) {
+function BillsView({ bills, onAdd, onEdit, onArchive, onBulkImport }: { bills: BillRow[]; onAdd: () => void; onEdit: (bill: BillRow) => void; onArchive: (bill: BillRow) => void; onBulkImport: () => void }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const visibleBills = bills.filter((bill) =>
+    (status === "all" || bill.paymentStatus === status) &&
+    matchesSearch([bill.billNumber, bill.outlet, bill.brand, bill.billDate, bill.totalAmount], search)
+  );
+
   return (
-    <CrudPanel title="Bills" description="Invoice records captured from sales-app updates, retailer WhatsApp, photos, or admin entry." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Bill">
-      {bills.map((bill) => (
+    <CrudPanel title="Bills" description="Invoice records captured from sales-app updates, retailer WhatsApp, photos, or admin entry." onAdd={onAdd} onBulkImport={onBulkImport} addLabel="Add Bill" searchValue={search} onSearchChange={setSearch} searchPlaceholder="Search bill, outlet, brand, date" statusValue={status} statusOptions={uniqueOptions(bills.map((bill) => bill.paymentStatus))} onStatusChange={setStatus} resultCount={visibleBills.length} totalCount={bills.length}>
+      {visibleBills.map((bill) => (
         <article className="task-row" key={bill.id}>
           <div className="queue-top">
             <strong>{bill.billNumber}</strong>
-            <button className="link-button" onClick={() => onEdit(bill)}>Edit</button>
+            <div className="inline-actions">
+              <button className="link-button" onClick={() => onEdit(bill)}>Edit</button>
+              {isUuid(bill.id) && <button className="link-button" onClick={() => onArchive(bill)}>Archive</button>}
+            </div>
           </div>
-          <p>{bill.outlet} · {bill.brand}</p>
+          <p>{bill.outlet} - {bill.brand}</p>
           <div className="record-meta">
             <span>{bill.billDate}</span>
             <span>{money(bill.totalAmount)}</span>
@@ -3246,6 +3386,7 @@ function BillsView({ bills, onAdd, onEdit, onBulkImport }: { bills: BillRow[]; o
           </div>
         </article>
       ))}
+      {!visibleBills.length && <p className="empty-state">No bills match the current filters.</p>}
     </CrudPanel>
   );
 }
@@ -3369,6 +3510,14 @@ function CrudPanel({
   addLabel,
   onAdd,
   onBulkImport,
+  searchValue,
+  onSearchChange,
+  searchPlaceholder,
+  statusValue,
+  statusOptions,
+  onStatusChange,
+  resultCount,
+  totalCount,
   children
 }: {
   title: string;
@@ -3376,6 +3525,14 @@ function CrudPanel({
   addLabel: string;
   onAdd: () => void;
   onBulkImport: () => void;
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  searchPlaceholder?: string;
+  statusValue?: string;
+  statusOptions?: string[];
+  onStatusChange?: (value: string) => void;
+  resultCount?: number;
+  totalCount?: number;
   children: ReactNode;
 }) {
   return (
@@ -3391,6 +3548,29 @@ function CrudPanel({
             <button className="primary-button" onClick={onAdd}>{addLabel}</button>
           </div>
         </div>
+        {(onSearchChange || onStatusChange) && (
+          <div className="list-toolbar">
+            {onSearchChange && (
+              <label className="toolbar-search">
+                <span>Search</span>
+                <input value={searchValue ?? ""} onChange={(event) => onSearchChange(event.target.value)} placeholder={searchPlaceholder ?? "Search records"} type="search" />
+              </label>
+            )}
+            {onStatusChange && statusOptions?.length ? (
+              <label className="toolbar-filter">
+                <span>Status</span>
+                <select value={statusValue ?? "all"} onChange={(event) => onStatusChange(event.target.value)}>
+                  {statusOptions.map((option) => (
+                    <option key={option} value={option}>{option === "all" ? "All statuses" : option}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {typeof resultCount === "number" && typeof totalCount === "number" && (
+              <span className="toolbar-count">{resultCount} of {totalCount}</span>
+            )}
+          </div>
+        )}
         <div className="task-list">{children}</div>
       </div>
     </section>
@@ -3480,17 +3660,17 @@ function CRMSyncView({
         </article>
 
         <article className="panel">
-          <h2>Connector Roadmap</h2>
+          <h2>Connector Readiness</h2>
           <div className="template-columns">
             {availableIntegrations.map((integration) => (
               <span className="tag" key={integration}>{integration}</span>
             ))}
           </div>
-          <p className="manager-note">MVP support is export-first. Native two-way sync, field mapping, duplicate handling, retries, and error logs remain pilot-phase work.</p>
+          <p className="manager-note">Current support is export-first, with mapped connectors planned for two-way sync, duplicate handling, retries, and provider error visibility.</p>
         </article>
 
         <article className="panel wide-panel">
-          <h2>Integration Controls To Add</h2>
+          <h2>Integration Controls</h2>
           <div className="module-list">
             <article className="module-card"><h3>Field Mapping</h3><p>Map ShipD2R outlets, SKUs, orders, payments, and complaints to each brand CRM schema.</p></article>
             <article className="module-card"><h3>Approval Before Sync</h3><p>Push verified data only, with manager approval for sensitive records.</p></article>
@@ -3672,6 +3852,44 @@ function BulkImportModal({
             <button className="reject" type="button" onClick={onClose}>Cancel</button>
           </div>
         </form>
+      </section>
+    </div>
+  );
+}
+
+function ArchiveConfirmModal({
+  request,
+  onCancel,
+  onConfirm
+}: {
+  request: ArchiveRequest;
+  onCancel: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+
+  return (
+    <div className="modal-backdrop">
+      <section className="modal compact-modal" role="dialog" aria-modal="true" aria-labelledby="archive-title">
+        <div className="modal-header">
+          <div>
+            <p className="eyebrow">Archive confirmation</p>
+            <h2 id="archive-title">Archive {request.label}</h2>
+          </div>
+          <button className="icon-button" onClick={onCancel} title="Close">x</button>
+        </div>
+        <div className="archive-summary">
+          <strong>{request.impact}</strong>
+          <span>This is a soft archive. Existing history remains available for audit and reporting.</span>
+        </div>
+        <div className="form-field">
+          <label htmlFor="archive-reason">Reason</label>
+          <textarea id="archive-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Wrong record, inactive client, duplicate, cancelled by source office..." />
+        </div>
+        <div className="action-row">
+          <button className="reject" type="button" onClick={() => onConfirm(reason.trim())}>Archive Record</button>
+          <button className="secondary-button" type="button" onClick={onCancel}>Cancel</button>
+        </div>
       </section>
     </div>
   );
