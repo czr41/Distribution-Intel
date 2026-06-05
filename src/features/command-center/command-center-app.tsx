@@ -27,7 +27,7 @@ import type {
   VerificationDraftRecord
 } from "./types";
 
-type View = "command" | "inbox" | "verification" | "media" | "outlets" | "products" | "procurement" | "tasks" | "payments" | "orders" | "bills" | "territories" | "finance" | "reports" | "partners" | "ops" | "users" | "crm-sync" | "integrations";
+type View = "command" | "inbox" | "verification" | "media" | "outlets" | "products" | "procurement" | "tasks" | "payments" | "orders" | "bills" | "territories" | "finance" | "reports" | "partners" | "ops" | "users" | "crm-sync" | "integrations" | "system";
 type MediaLabResult = {
   fileName: string;
   fileType: string;
@@ -66,6 +66,7 @@ type BulkImportType = Exclude<ModalType, null>;
 type IntegrationNotice = { type: "success" | "error"; message: string };
 type SalesWorkflow = "visit" | "order" | "payment" | "evidence";
 type ArchiveRequest = { type: Exclude<ModalType, null>; id: string; label: string; impact: string };
+type SalesCartLine = { skuId: string; name: string; code: string; brand: string; quantity: number; unitPrice: number };
 type EditableMasterData =
   | { type: "outlet"; record: OutletRow }
   | { type: "brand"; record: BrandOption }
@@ -148,7 +149,8 @@ const viewTitles: Record<View, string> = {
   ops: "Field Sales Workspace",
   users: "Access Management",
   "crm-sync": "CRM and ERP Sync",
-  integrations: "Platform Integrations"
+  integrations: "Platform Integrations",
+  system: "System Health"
 };
 
 const bulkTemplates: Record<BulkImportType, { title: string; filename: string; columns: string[]; sample: string[] }> = {
@@ -360,16 +362,18 @@ function userAccessKind(user: AppUserRow) {
   if (user.role === "finance_collections") return "finance";
   if (user.role === "integration_user") return "integration";
   if (user.role === "operations_manager") return "manager";
-  if (user.role === "super_admin" || user.role === "admin_operator") return "admin";
+  if (user.role === "admin_operator") return "operator";
+  if (user.role === "super_admin") return "admin";
   return "partner";
 }
 
 function canSeeView(user: AppUserRow, view: View) {
   const accessKind = userAccessKind(user);
   if (accessKind === "admin") return true;
-  if (accessKind === "manager") return !["users", "integrations", "verification"].includes(view);
+  if (accessKind === "operator") return ["command", "inbox", "verification", "media", "outlets", "products", "procurement", "tasks", "orders", "bills", "territories", "reports", "system"].includes(view);
+  if (accessKind === "manager") return !["users", "integrations"].includes(view);
   if (accessKind === "finance") return ["finance", "payments", "tasks", "reports"].includes(view);
-  if (accessKind === "integration") return ["crm-sync", "reports"].includes(view);
+  if (accessKind === "integration") return ["crm-sync", "integrations", "reports", "system"].includes(view);
   if (accessKind === "partner") return ["partners", "reports"].includes(view);
   return ["ops", "outlets", "tasks", "orders", "payments", "media"].includes(view);
 }
@@ -546,7 +550,10 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
   }
 
   const accessKind = userAccessKind(currentUser);
-  const isAdminUser = accessKind === "admin";
+  const isAdminUser = accessKind === "admin" || accessKind === "operator";
+  const canManageSystem = accessKind === "admin";
+  const canConfigureIntegrations = canSeeView(currentUser, "integrations");
+  const canManagePartners = accessKind === "admin" || accessKind === "operator" || accessKind === "manager";
   const selectedRecord =
     records.find((record) => record.id === selectedId) ??
     records[0] ?? {
@@ -1179,7 +1186,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Approve Current", action: () => verifyRecord(selectedRecord.id), disabled: selectedRecord.id === "empty" },
       { label: "Ask Clarification", action: () => sendBack(selectedRecord.id), disabled: selectedRecord.id === "empty" }
     ],
-    media: isAdminUser
+    media: canManageSystem
       ? [
           { label: "Configure AI", action: () => setActiveView("integrations") },
           { label: "Open Inbox", action: () => setActiveView("inbox") }
@@ -1224,11 +1231,13 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Bulk Import", action: () => openBulkImport("payment") }
     ],
     reports: [{ label: "Open Templates", action: () => setActiveView("reports") }],
-    partners: [
-      { label: "Add Client", action: () => openCreate("brand") },
-      { label: "Add Product", action: () => openCreate("sku") },
-      { label: "Bulk Import", action: () => openBulkImport("brand") }
-    ],
+    partners: canManagePartners
+      ? [
+          { label: "Add Client", action: () => openCreate("brand") },
+          { label: "Add Product", action: () => openCreate("sku") },
+          { label: "Bulk Import", action: () => openBulkImport("brand") }
+        ]
+      : [{ label: "Open Reports", action: () => setActiveView("reports") }],
     ops: [
       { label: "Add Sales Rep", action: () => openCreate("salesman") },
       { label: "Bulk Import", action: () => openBulkImport("salesman") }
@@ -1237,11 +1246,16 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
       { label: "Add User", action: () => openCreate("user") },
       { label: "Bulk Import", action: () => openBulkImport("user") }
     ],
-    "crm-sync": [
-      { label: "Configure Providers", action: () => setActiveView("integrations") },
-      { label: "Reports", action: () => setActiveView("reports") }
-    ],
-    integrations: [{ label: "Copy Webhook Path", action: () => navigator.clipboard?.writeText(metaIntegration.webhookUrl) }]
+    "crm-sync": canConfigureIntegrations
+      ? [
+          { label: "Configure Providers", action: () => setActiveView("integrations") },
+          { label: "Reports", action: () => setActiveView("reports") }
+        ]
+      : [{ label: "Reports", action: () => setActiveView("reports") }],
+    integrations: [{ label: "Copy Webhook Path", action: () => navigator.clipboard?.writeText(metaIntegration.webhookUrl) }],
+    system: canConfigureIntegrations
+      ? [{ label: "Open Integrations", action: () => setActiveView("integrations") }]
+      : [{ label: "Open Reports", action: () => setActiveView("reports") }]
   };
 
   return (
@@ -1254,7 +1268,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         <nav className="nav-tabs" aria-label="Views">
           {visibleViews.map((view) => (
             <button key={view} className={`nav-tab ${activeView === view ? "active" : ""}`} onClick={() => setActiveView(view)}>
-              <span>{view === "ops" ? "Sales App" : view === "inbox" ? "Retailer WhatsApp" : view === "users" ? "Users" : view === "products" ? "Products / SKUs" : view === "procurement" ? "Procurement" : view === "crm-sync" ? "CRM Sync" : view[0].toUpperCase() + view.slice(1)}</span>
+              <span>{view === "ops" ? "Sales App" : view === "inbox" ? "Retailer WhatsApp" : view === "users" ? "Users" : view === "products" ? "Products / SKUs" : view === "procurement" ? "Procurement" : view === "crm-sync" ? "CRM Sync" : view === "system" ? "System Health" : view[0].toUpperCase() + view.slice(1)}</span>
             </button>
           ))}
         </nav>
@@ -1384,7 +1398,7 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
           />
         )}
         {activeView === "partners" && (
-          <PartnersView brands={brands} procurementOffices={procurementOffices} skus={skus} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} onAdd={() => openCreate("brand")} onAddSku={() => openCreate("sku")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onArchive={(brand) => requestArchive("brand", brand.id, brand.name, "The client will be marked inactive while historical sales and procurement records remain available.")} onBulkImport={() => openBulkImport("brand")} />
+          <PartnersView brands={brands} procurementOffices={procurementOffices} skus={skus} records={visiblePartnerRecords} partnerFilter={partnerFilter} onFilter={setPartnerFilter} canManage={canManagePartners} currentUser={currentUser} onAdd={() => openCreate("brand")} onAddSku={() => openCreate("sku")} onEdit={(brand) => openEdit({ type: "brand", record: brand })} onArchive={(brand) => requestArchive("brand", brand.id, brand.name, "The client will be marked inactive while historical sales and procurement records remain available.")} onBulkImport={() => openBulkImport("brand")} />
         )}
         {activeView === "ops" && <OpsView salesmen={salesmen} onAdd={() => openCreate("salesman")} onEdit={(person) => openEdit({ type: "salesman", record: person })} onBulkImport={() => openBulkImport("salesman")} />}
         {activeView === "users" && <UsersView users={users} onAdd={() => openCreate("user")} onEdit={(user) => openEdit({ type: "user", record: user })} onBulkImport={() => openBulkImport("user")} />}
@@ -1396,6 +1410,22 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         {activeView === "bills" && <BillsView bills={bills} onAdd={() => openCreate("bill")} onEdit={(bill) => openEdit({ type: "bill", record: bill })} onArchive={(bill) => requestArchive("bill", bill.id, bill.billNumber, "The bill will be written off or closed without removing invoice history from the account view.")} onBulkImport={() => openBulkImport("bill")} />}
         {activeView === "reports" && <ReportsView />}
         {activeView === "crm-sync" && <CRMSyncView brands={brands} outlets={outlets} skus={skus} payments={payments} orders={orders} metaIntegration={metaIntegration} aiProvider={aiProvider} />}
+        {activeView === "system" && (
+          <SystemHealthView
+            setupError={initialData.setupError}
+            metaIntegration={metaIntegration}
+            aiProvider={aiProvider}
+            openAIIntegration={openAIIntegration}
+            counts={{
+              brands: brands.length,
+              branches: procurementOffices.length,
+              skus: skus.length,
+              orders: orders.length,
+              payments: payments.length,
+              verificationDrafts: verificationDrafts.length
+            }}
+          />
+        )}
         {activeView === "integrations" && (
           <IntegrationsView
             metaIntegration={metaIntegration}
@@ -1937,6 +1967,7 @@ function SalesRepPortal({
   const [orderSearch, setOrderSearch] = useState("");
   const [selectedOrderSkuId, setSelectedOrderSkuId] = useState(skus[0]?.id ?? "");
   const [orderQuantity, setOrderQuantity] = useState("12");
+  const [orderCart, setOrderCart] = useState<SalesCartLine[]>([]);
   const outletOptions = outlets.length ? outlets.map((outlet) => outlet.name) : ["Unassigned"];
   const brandOptions = brands.length ? brands.map((brand) => brand.name) : ["Unassigned"];
   const selectedOrderSku = skus.find((sku) => sku.id === selectedOrderSkuId) ?? skus[0];
@@ -1945,6 +1976,29 @@ function SalesRepPortal({
     return haystack.includes(orderSearch.trim().toLowerCase());
   });
   const visibleOrderSkus = orderSearch.trim() ? filteredOrderSkus : skus;
+  const orderCartTotal = orderCart.reduce((total, line) => total + line.quantity * line.unitPrice, 0);
+
+  function addSelectedSkuToCart() {
+    if (!selectedOrderSku) return;
+    const quantity = Math.max(Number(orderQuantity) || 0, 1);
+    setOrderCart((current) => {
+      const existing = current.find((line) => line.skuId === selectedOrderSku.id);
+      if (existing) {
+        return current.map((line) => (line.skuId === selectedOrderSku.id ? { ...line, quantity: line.quantity + quantity } : line));
+      }
+      return [
+        ...current,
+        {
+          skuId: selectedOrderSku.id,
+          name: selectedOrderSku.name,
+          code: selectedOrderSku.code,
+          brand: selectedOrderSku.brand,
+          quantity,
+          unitPrice: selectedOrderSku.mrp
+        }
+      ];
+    });
+  }
 
   async function submitVisit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1973,14 +2027,30 @@ function SalesRepPortal({
     }
     setIsSubmitting(true);
     try {
-      const form = new FormData(formElement);
-      form.set("sku", selectedSku);
-      await onCreateOrder(form);
+      const cartLines = orderCart.length
+        ? orderCart
+        : [{
+            skuId: selectedOrderSku?.id ?? "selected",
+            name: selectedOrderSku?.name ?? selectedSku,
+            code: selectedOrderSku?.code ?? "",
+            brand: selectedOrderSku?.brand ?? "",
+            quantity: Math.max(Number(orderQuantity) || 0, 1),
+            unitPrice: selectedOrderSku?.mrp ?? 0
+          }];
+      for (const line of cartLines) {
+        const lineForm = new FormData(formElement);
+        lineForm.set("sku", line.code ? `${line.name} (${line.code})` : line.name);
+        lineForm.set("quantity", String(line.quantity));
+        lineForm.set("unitPrice", String(line.unitPrice));
+        lineForm.set("expectedValue", String(line.quantity * line.unitPrice));
+        await onCreateOrder(lineForm);
+      }
       formElement.reset();
       setSelectedOrderSkuId(skus[0]?.id ?? "");
       setOrderQuantity("12");
+      setOrderCart([]);
       setOrderSearch("");
-      setNotice({ type: "success", message: "Order intent captured." });
+      setNotice({ type: "success", message: `${cartLines.length} order ${cartLines.length === 1 ? "line" : "lines"} captured.` });
     } catch (error) {
       setNotice({ type: "error", message: error instanceof Error ? error.message : "Order could not be captured." });
     } finally {
@@ -2137,6 +2207,9 @@ function SalesRepPortal({
                         {quantity} units
                       </button>
                     ))}
+                    <button type="button" className="secondary-button" onClick={addSelectedSkuToCart} disabled={!selectedOrderSku}>
+                      Add to Cart
+                    </button>
                   </div>
                   {selectedOrderSku && (
                     <div className="selected-order-summary wide">
@@ -2145,13 +2218,30 @@ function SalesRepPortal({
                       <small>{selectedOrderSku.code || "No SKU code"} - {selectedOrderSku.brand} - {money(selectedOrderSku.mrp)}</small>
                     </div>
                   )}
+                  <div className="sales-cart-list wide">
+                    <div className="queue-top">
+                      <strong>Order cart</strong>
+                      <span className="tag blue">{orderCart.length} lines</span>
+                    </div>
+                    {orderCart.map((line) => (
+                      <article className="sales-cart-line" key={line.skuId}>
+                        <div>
+                          <strong>{line.name}</strong>
+                          <span>{line.code || "No SKU code"} - {line.brand}</span>
+                        </div>
+                        <b>{line.quantity} x {money(line.unitPrice)}</b>
+                        <button className="link-button" type="button" onClick={() => setOrderCart((current) => current.filter((item) => item.skuId !== line.skuId))}>Remove</button>
+                      </article>
+                    ))}
+                    {!orderCart.length && <span className="cart-empty-note">Capture the selected product directly, or add multiple SKUs to the cart first.</span>}
+                  </div>
                 </div>
                 {selectedOrderSku && (
                   <div className="sales-order-dock">
                     <div>
-                      <span>Current order</span>
-                      <strong>{orderQuantity || 0} x {selectedOrderSku.name}</strong>
-                      <small>{money((Number(orderQuantity) || 0) * selectedOrderSku.mrp)} estimated value</small>
+                      <span>{orderCart.length ? "Cart order" : "Current order"}</span>
+                      <strong>{orderCart.length ? `${orderCart.length} SKU lines` : `${orderQuantity || 0} x ${selectedOrderSku.name}`}</strong>
+                      <small>{money(orderCart.length ? orderCartTotal : (Number(orderQuantity) || 0) * selectedOrderSku.mrp)} estimated value</small>
                     </div>
                     <button className="approve" disabled={isSubmitting} type="submit">Capture</button>
                   </div>
@@ -3058,6 +3148,8 @@ function PartnersView({
   records,
   partnerFilter,
   onFilter,
+  canManage,
+  currentUser,
   onAdd,
   onAddSku,
   onEdit,
@@ -3070,6 +3162,8 @@ function PartnersView({
   records: CommandRecord[];
   partnerFilter: string;
   onFilter: (value: string) => void;
+  canManage: boolean;
+  currentUser: AppUserRow;
   onAdd: () => void;
   onAddSku: () => void;
   onEdit: (brand: BrandOption) => void;
@@ -3082,6 +3176,7 @@ function PartnersView({
         <div>
           <p className="eyebrow">Verified data only</p>
           <h2>Brand Partner Dashboard</h2>
+          {!canManage && <p className="partner-access-note">Signed in as {currentUser.name}. Showing partner-safe verified data and export-ready reporting only.</p>}
         </div>
         <div className="panel-actions">
           <select value={partnerFilter} onChange={(event) => onFilter(event.target.value)}>
@@ -3092,15 +3187,21 @@ function PartnersView({
               </option>
             ))}
           </select>
-          <button className="secondary-button" onClick={onBulkImport}>
-            Bulk Import
-          </button>
-          <button className="secondary-button" onClick={onAddSku}>
-            Add Product
-          </button>
-          <button className="primary-button" onClick={onAdd}>
-            Add Client
-          </button>
+          {canManage ? (
+            <>
+              <button className="secondary-button" onClick={onBulkImport}>
+                Bulk Import
+              </button>
+              <button className="secondary-button" onClick={onAddSku}>
+                Add Product
+              </button>
+              <button className="primary-button" onClick={onAdd}>
+                Add Client
+              </button>
+            </>
+          ) : (
+            <span className="tag blue">Read-only partner access</span>
+          )}
         </div>
       </section>
       <section className="partner-grid">
@@ -3120,10 +3221,12 @@ function PartnersView({
                     {logo ? <img src={logo} alt={`${brand.name} logo`} /> : <span>{brand.name.slice(0, 1)}</span>}
                     <h2>{brand.name}</h2>
                   </div>
-                  <div className="inline-actions">
-                    <button className="link-button" onClick={() => onEdit(brand)}>Edit</button>
-                    {isUuid(brand.id) && <button className="link-button" onClick={() => onArchive(brand)}>Archive</button>}
-                  </div>
+                  {canManage && (
+                    <div className="inline-actions">
+                      <button className="link-button" onClick={() => onEdit(brand)}>Edit</button>
+                      {isUuid(brand.id) && <button className="link-button" onClick={() => onArchive(brand)}>Archive</button>}
+                    </div>
+                  )}
                 </div>
                 <p>{brand.category} client managed by {brand.contact}</p>
                 <div className="procurement-office-strip">
@@ -3491,8 +3594,22 @@ function FinanceView({
   const outstanding = payments.reduce((total, payment) => total + Math.max(payment.amountDue - payment.amountCollected, 0), 0);
   const overdue = payments.filter((payment) => payment.status === "Overdue" || payment.riskLevel === "High" || payment.riskLevel === "Critical");
   const promises = payments.filter((payment) => payment.promisedPaymentDate && payment.promisedPaymentDate !== "No promise");
+  const disputed = payments.filter((payment) => payment.status === "Disputed");
   const paymentTasks = tasks.filter((task) => task.taskType.toLowerCase().includes("payment") || task.title.toLowerCase().includes("payment"));
   const outletByName = new Map(outlets.map((outlet) => [outlet.name, outlet]));
+  const today = new Date();
+  const pendingAmount = (payment: PaymentRow) => Math.max(payment.amountDue - payment.amountCollected, 0);
+  const daysPastDue = (dateText: string) => {
+    const due = new Date(dateText);
+    if (Number.isNaN(due.getTime())) return 0;
+    return Math.max(Math.floor((today.getTime() - due.getTime()) / 86400000), 0);
+  };
+  const agingBuckets = [
+    { label: "0-7 days", payments: payments.filter((payment) => pendingAmount(payment) > 0 && daysPastDue(payment.dueDate) <= 7) },
+    { label: "8-15 days", payments: payments.filter((payment) => pendingAmount(payment) > 0 && daysPastDue(payment.dueDate) >= 8 && daysPastDue(payment.dueDate) <= 15) },
+    { label: "16-30 days", payments: payments.filter((payment) => pendingAmount(payment) > 0 && daysPastDue(payment.dueDate) >= 16 && daysPastDue(payment.dueDate) <= 30) },
+    { label: "30+ days", payments: payments.filter((payment) => pendingAmount(payment) > 0 && daysPastDue(payment.dueDate) > 30) }
+  ];
 
   const collectionByRep = salesmen.map((person) => {
     const repOutlets = outlets.filter((outlet) => outlet.assignedSalesman === person.name).map((outlet) => outlet.name);
@@ -3509,6 +3626,16 @@ function FinanceView({
         <Metric label="Collected" value={money(totalCollected)} detail="Updated in CRM" />
         <Metric label="Outstanding" value={money(outstanding)} detail={`${overdue.length} high-risk accounts`} />
         <Metric label="Promise-to-pay" value={promises.length} detail="Retailer commitments tracked" />
+      </section>
+
+      <section className="finance-aging-grid">
+        {agingBuckets.map((bucket) => (
+          <article className="finance-aging-card" key={bucket.label}>
+            <span>{bucket.label}</span>
+            <strong>{money(bucket.payments.reduce((sum, payment) => sum + pendingAmount(payment), 0))}</strong>
+            <small>{bucket.payments.length} accounts</small>
+          </article>
+        ))}
       </section>
 
       <section className="admin-command-grid">
@@ -3559,6 +3686,42 @@ function FinanceView({
               </article>
             ))}
             {!collectionByRep.length && <p className="empty-state">Assign outlets to sales reps to see collection ownership.</p>}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Dispute Resolution</h2>
+          <div className="task-list compact-list">
+            {disputed.slice(0, 6).map((payment) => (
+              <article className="task-row compact-row" key={payment.id}>
+                <div className="queue-top">
+                  <strong>{payment.outlet}</strong>
+                  <span className="tag warn">Disputed</span>
+                </div>
+                <p>{payment.brand} - {money(pendingAmount(payment))} pending reconciliation</p>
+                <div className="record-meta">
+                  <span>Due {payment.dueDate}</span>
+                  <span>{payment.paymentMode}</span>
+                </div>
+              </article>
+            ))}
+            {!disputed.length && <p className="empty-state">No disputed payments requiring resolution.</p>}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2>Promise Calendar</h2>
+          <div className="task-list compact-list">
+            {promises.slice(0, 6).map((payment) => (
+              <article className="task-row compact-row" key={payment.id}>
+                <div className="queue-top">
+                  <strong>{payment.outlet}</strong>
+                  <span className="tag blue">{payment.promisedPaymentDate}</span>
+                </div>
+                <p>{payment.brand} - {money(pendingAmount(payment))} expected</p>
+              </article>
+            ))}
+            {!promises.length && <p className="empty-state">No promised payment dates captured yet.</p>}
           </div>
         </article>
 
@@ -3843,6 +4006,91 @@ function CRMSyncView({
           </div>
         </article>
       </section>
+    </section>
+  );
+}
+
+function SystemHealthView({
+  setupError,
+  metaIntegration,
+  aiProvider,
+  openAIIntegration,
+  counts
+}: {
+  setupError?: string;
+  metaIntegration: MetaIntegrationSettings;
+  aiProvider: AIProviderSettings;
+  openAIIntegration: OpenAIIntegrationSettings;
+  counts: { brands: number; branches: number; skus: number; orders: number; payments: number; verificationDrafts: number };
+}) {
+  const checks = [
+    {
+      name: "Supabase data load",
+      status: setupError ? "Needs attention" : "Healthy",
+      detail: setupError || "Core operating data loaded successfully."
+    },
+    {
+      name: "Procurement schema",
+      status: counts.branches ? "Healthy" : "Fallback mode",
+      detail: counts.branches ? `${counts.branches} brand branches available.` : "Branch table may be pending migration; procurement fallback data is active."
+    },
+    {
+      name: "Meta WhatsApp",
+      status: metaIntegration.status,
+      detail: metaIntegration.lastError || `${metaIntegration.displayName} - ${metaIntegration.updatedAt}`
+    },
+    {
+      name: "AI extraction",
+      status: aiProvider.status,
+      detail: aiProvider.lastError || `${aiProvider.provider} / ${aiProvider.model} - ${aiProvider.extractionMode}`
+    },
+    {
+      name: "OpenAI fallback",
+      status: openAIIntegration.status,
+      detail: openAIIntegration.lastError || `${openAIIntegration.model} and ${openAIIntegration.transcriptionModel}`
+    },
+    {
+      name: "Verification queue",
+      status: counts.verificationDrafts ? "Review required" : "Clear",
+      detail: `${counts.verificationDrafts} drafts waiting in the current queue.`
+    }
+  ];
+
+  return (
+    <section className="distribution-dashboard">
+      <section className="metrics-grid">
+        <Metric label="Brands" value={counts.brands} detail="Client accounts loaded" />
+        <Metric label="Branches" value={counts.branches} detail="Source offices loaded" />
+        <Metric label="Products" value={counts.skus} detail="SKU records loaded" />
+        <Metric label="Transactions" value={counts.orders + counts.payments} detail="Orders and payments loaded" />
+      </section>
+      <article className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>System Checks</h2>
+            <p>Operational health for schema, integrations, AI providers, and queues.</p>
+          </div>
+        </div>
+        <div className="health-grid">
+          {checks.map((check) => (
+            <article className="health-card" key={check.name}>
+              <div className="queue-top">
+                <strong>{check.name}</strong>
+                <span className={`tag ${["Healthy", "Connected", "Clear"].includes(check.status) ? "green" : check.status === "Needs attention" || check.status === "Review required" ? "warn" : "blue"}`}>{check.status}</span>
+              </div>
+              <p>{check.detail}</p>
+            </article>
+          ))}
+        </div>
+      </article>
+      <article className="panel">
+        <h2>Recommended Operations</h2>
+        <div className="module-list">
+          <article className="module-card"><h3>Schema migration</h3><p>Apply the procurement/material-flow migration when Supabase access is available so branch records persist.</p></article>
+          <article className="module-card"><h3>Integration test</h3><p>Send a WhatsApp test payload and verify AI extraction creates review drafts.</p></article>
+          <article className="module-card"><h3>Access review</h3><p>Review role assignments after adding new users or partner accounts.</p></article>
+        </div>
+      </article>
     </section>
   );
 }

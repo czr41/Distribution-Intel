@@ -33,6 +33,8 @@ const rolePermissions: Record<UserRole, Permission[]> = {
   field_executive: ["use_sales_app"],
   brand_partner_viewer: ["view_brand_dashboards", "download_reports"],
   brand_partner_manager: ["view_brand_dashboards", "download_reports"],
+  finance_collections: ["view_internal_dashboards", "download_reports"],
+  integration_user: ["view_internal_dashboards", "download_reports"],
 };
 
 export function can(role: UserRole, permission: Permission): boolean {

@@ -501,6 +501,51 @@ h2 {
   padding: 0 16px;
 }
 
+.sales-cart-list {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.sales-cart-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.sales-cart-line div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sales-cart-line strong,
+.sales-cart-line span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sales-cart-line span,
+.cart-empty-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sales-cart-line b {
+  color: var(--ink);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .sales-evidence-result {
   display: grid;
   gap: 8px;
@@ -1166,6 +1211,12 @@ textarea {
   margin-bottom: 16px;
 }
 
+.partner-access-note {
+  color: var(--muted);
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+
 .partner-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1707,6 +1758,48 @@ textarea {
   gap: 5px;
 }
 
+.finance-aging-grid,
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.finance-aging-card,
+.health-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 26px rgba(24, 33, 40, 0.05);
+}
+
+.finance-aging-card span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.finance-aging-card strong {
+  color: var(--ink);
+  font-size: 22px;
+}
+
+.finance-aging-card small,
+.health-card p {
+  color: var(--muted);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.health-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
 .bar {
   height: 10px;
   background: var(--surface-strong);
@@ -2013,7 +2106,9 @@ textarea {
   .report-cockpit,
   .report-control-bar,
   .report-template-grid,
-  .modal-insight-grid {
+  .modal-insight-grid,
+  .finance-aging-grid,
+  .health-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2083,6 +2178,10 @@ textarea {
   }
 
   .access-row {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-cart-line {
     grid-template-columns: 1fr;
   }
 

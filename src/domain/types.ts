@@ -4,7 +4,9 @@ export type UserRole =
   | "admin_operator"
   | "field_executive"
   | "brand_partner_viewer"
-  | "brand_partner_manager";
+  | "brand_partner_manager"
+  | "finance_collections"
+  | "integration_user";
 
 export type RecordStatus =
   | "received"
