@@ -105,6 +105,8 @@ create table if not exists outlets (
   assigned_executive_id uuid references field_executives(id),
   status text not null default 'prospect',
   credit_status text,
+  credit_limit numeric not null default 0,
+  credit_hold_status text not null default 'clear',
   payment_terms text,
   monthly_potential numeric,
   created_at timestamptz not null default now(),
@@ -307,6 +309,7 @@ create table if not exists order_items (
 
 create table if not exists bills (
   id uuid primary key default gen_random_uuid(),
+  order_id uuid references orders(id) on delete set null,
   outlet_id uuid references outlets(id),
   brand_id uuid references brands(id),
   field_executive_id uuid references field_executives(id),
@@ -343,6 +346,14 @@ create table if not exists payments (
   due_date date,
   promised_payment_date date,
   payment_mode text,
+  receipt_number text,
+  collector_name text,
+  allocation_summary text,
+  write_off_status text not null default 'not_requested',
+  dispute_status text not null default 'not_disputed',
+  settlement_status text not null default 'unreconciled',
+  settlement_reference text,
+  settlement_date date,
   status text not null default 'due',
   risk_level text not null default 'medium',
   source_message_id uuid references incoming_messages(id),
@@ -487,6 +498,7 @@ begin
 
   if to_regclass('public.outlets') is not null then
     create index if not exists idx_outlets_city_status on outlets(city, status);
+    create index if not exists idx_outlets_credit_hold on outlets(credit_hold_status);
   end if;
 
   if to_regclass('public.brand_branches') is not null then
@@ -508,10 +520,14 @@ begin
 
   if to_regclass('public.bills') is not null then
     create index if not exists idx_bills_brand_date on bills(brand_id, bill_date desc);
+    create index if not exists idx_bills_order on bills(order_id);
   end if;
 
   if to_regclass('public.payments') is not null then
     create index if not exists idx_payments_brand_status on payments(brand_id, status);
+    create index if not exists idx_payments_bill on payments(bill_id);
+    create index if not exists idx_payments_settlement on payments(settlement_status, settlement_date);
+    create index if not exists idx_payments_dispute on payments(dispute_status);
   end if;
 
   if to_regclass('public.tasks') is not null then

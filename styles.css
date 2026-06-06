@@ -519,6 +519,80 @@ h2 {
   background: #f7fcfd;
 }
 
+.sales-side-panel,
+.outlet-account-panel,
+.mini-ledger {
+  display: grid;
+  gap: 12px;
+}
+
+.outlet-account-panel {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.account-snapshot {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ledger-row {
+  display: grid;
+  gap: 3px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.ledger-row strong,
+.ledger-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ledger-row span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.muted-detail {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 6px 0 0;
+}
+
+.finance-control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.permission-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) repeat(7, minmax(84px, 1fr));
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.permission-cell {
+  min-width: 84px;
+  padding: 10px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.permission-cell.header {
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-weight: 800;
+}
+
 .sales-cart-line {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -1230,6 +1304,97 @@ textarea {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+}
+
+.partner-scope-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.9fr);
+  gap: 14px;
+  align-items: stretch;
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid rgba(6, 182, 200, 0.22);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f7fdfe, #ffffff);
+}
+
+.partner-scope-panel h3 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.partner-scope-panel p {
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.scope-metrics,
+.partner-report-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.scope-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.partner-report-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.partner-report-card {
+  min-height: 176px;
+  align-content: space-between;
+  box-shadow: none;
+}
+
+.partner-report-card h3,
+.partner-report-card p {
+  margin: 0;
+}
+
+.partner-report-card p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.report-metric {
+  display: block;
+  margin-top: 10px;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.partner-ops-grid {
+  margin-top: 16px;
+}
+
+.partner-question-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.partner-question-form textarea {
+  min-height: 96px;
+}
+
+.partner-movement-table {
+  max-height: 430px;
+}
+
+.partner-movement-row {
+  grid-template-columns: minmax(180px, 1.2fr) minmax(92px, 0.55fr) minmax(150px, 0.9fr) minmax(150px, 0.9fr) minmax(90px, 0.5fr) auto;
+}
+
+.partner-movement-row > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .partner-card {
@@ -2108,6 +2273,9 @@ textarea {
   .media-lab-grid,
   .evidence-split,
   .partner-grid,
+  .partner-scope-panel,
+  .partner-report-grid,
+  .scope-metrics,
   .procurement-grid,
   .procurement-flow-map,
   .procurement-status-strip,
@@ -2169,6 +2337,8 @@ textarea {
   }
 
   .field-grid,
+  .account-snapshot,
+  .finance-control-grid,
   .integration-summary,
   .manager-stat-grid,
   .admin-action-grid,
@@ -2176,9 +2346,10 @@ textarea {
   .table-row,
   .table-row.outlet-row,
   .table-row.salesman,
-  .material-flow-row,
-  .inventory-row,
-  .form-grid {
+    .material-flow-row,
+    .inventory-row,
+    .partner-movement-row,
+    .form-grid {
     grid-template-columns: 1fr;
   }
 

@@ -115,6 +115,8 @@ export type OutletRow = {
   status: "Active" | "Prospect" | "Inactive";
   owner: string;
   phone: string;
+  creditLimit: number;
+  creditHoldStatus: "Clear" | "Watch" | "Hold" | "Blocked";
 };
 
 export type SalesmanRow = {
@@ -185,6 +187,8 @@ export type PaymentRow = {
   id: string;
   outlet: string;
   brand: string;
+  billId: string;
+  billNumber: string;
   amountDue: number;
   amountCollected: number;
   dueDate: string;
@@ -192,6 +196,14 @@ export type PaymentRow = {
   paymentMode: string;
   status: "Due" | "Partially paid" | "Paid" | "Overdue" | "Disputed" | "Written off";
   riskLevel: "Low" | "Medium" | "High" | "Critical";
+  receiptNumber: string;
+  collectorName: string;
+  allocationSummary: string;
+  writeOffStatus: "Not requested" | "Requested" | "Approved" | "Rejected";
+  disputeStatus: "Not disputed" | "Opened" | "Under review" | "Resolved" | "Rejected";
+  settlementStatus: "Unreconciled" | "Matched" | "Exception" | "Settled";
+  settlementReference: string;
+  settlementDate: string;
 };
 
 export type OrderRow = {
@@ -211,10 +223,12 @@ export type BillRow = {
   id: string;
   outlet: string;
   brand: string;
+  orderId: string;
   billNumber: string;
   billDate: string;
   totalAmount: number;
   paymentStatus: "Due" | "Partially paid" | "Paid" | "Overdue" | "Disputed" | "Written off";
+  billImagePath: string;
 };
 
 export type VerificationDraftRecord = {

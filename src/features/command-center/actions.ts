@@ -96,8 +96,17 @@ const outletSchema = z.object({
   brand: z.string().optional(),
   territory: z.string().optional(),
   assignedSalesman: z.string().optional(),
-  status: z.enum(["Active", "Prospect", "Inactive"])
+  status: z.enum(["Active", "Prospect", "Inactive"]),
+  creditLimit: z.string().optional(),
+  creditHoldStatus: z.enum(["Clear", "Watch", "Hold", "Blocked"])
 });
+
+const creditHoldStatusMap = {
+  Clear: "clear",
+  Watch: "watch",
+  Hold: "hold",
+  Blocked: "blocked"
+} as const;
 
 const salesmanSchema = z.object({
   name: z.string().min(1),
@@ -190,16 +199,47 @@ const riskLevelMap = {
   Critical: "critical"
 } as const;
 
+const writeOffStatusMap = {
+  "Not requested": "not_requested",
+  Requested: "requested",
+  Approved: "approved",
+  Rejected: "rejected"
+} as const;
+
+const disputeStatusMap = {
+  "Not disputed": "not_disputed",
+  Opened: "opened",
+  "Under review": "under_review",
+  Resolved: "resolved",
+  Rejected: "rejected"
+} as const;
+
+const settlementStatusMap = {
+  Unreconciled: "unreconciled",
+  Matched: "matched",
+  Exception: "exception",
+  Settled: "settled"
+} as const;
+
 const paymentSchema = z.object({
   outlet: z.string().min(1),
   brand: z.string().min(1),
+  billNumber: z.string().optional(),
   amountDue: z.string().min(1),
   amountCollected: z.string().optional(),
   dueDate: z.string().optional(),
   promisedPaymentDate: z.string().optional(),
   paymentMode: z.string().optional(),
   status: z.enum(["Due", "Partially paid", "Paid", "Overdue", "Disputed", "Written off"]),
-  riskLevel: z.enum(["Low", "Medium", "High", "Critical"])
+  riskLevel: z.enum(["Low", "Medium", "High", "Critical"]),
+  receiptNumber: z.string().optional(),
+  collectorName: z.string().optional(),
+  allocationSummary: z.string().optional(),
+  writeOffStatus: z.enum(["Not requested", "Requested", "Approved", "Rejected"]),
+  disputeStatus: z.enum(["Not disputed", "Opened", "Under review", "Resolved", "Rejected"]),
+  settlementStatus: z.enum(["Unreconciled", "Matched", "Exception", "Settled"]),
+  settlementReference: z.string().optional(),
+  settlementDate: z.string().optional()
 });
 
 const orderStatusMap = {
@@ -224,10 +264,12 @@ const orderSchema = z.object({
 const billSchema = z.object({
   outlet: z.string().min(1),
   brand: z.string().min(1),
+  linkedOrderId: z.string().uuid().optional().or(z.literal("")),
   billNumber: z.string().optional(),
   billDate: z.string().optional(),
   totalAmount: z.string().min(1),
-  paymentStatus: z.enum(["Due", "Partially paid", "Paid", "Overdue", "Disputed", "Written off"])
+  paymentStatus: z.enum(["Due", "Partially paid", "Paid", "Overdue", "Disputed", "Written off"]),
+  billImagePath: z.string().optional()
 });
 
 const connectionStatusMap = {
@@ -415,6 +457,35 @@ function riskLevel(risk?: string | null): PaymentRow["riskLevel"] {
   return "Medium";
 }
 
+function creditHoldStatus(status?: string | null): OutletRow["creditHoldStatus"] {
+  if (status === "watch") return "Watch";
+  if (status === "hold") return "Hold";
+  if (status === "blocked") return "Blocked";
+  return "Clear";
+}
+
+function writeOffStatus(status?: string | null): PaymentRow["writeOffStatus"] {
+  if (status === "requested") return "Requested";
+  if (status === "approved") return "Approved";
+  if (status === "rejected") return "Rejected";
+  return "Not requested";
+}
+
+function disputeStatus(status?: string | null): PaymentRow["disputeStatus"] {
+  if (status === "opened") return "Opened";
+  if (status === "under_review") return "Under review";
+  if (status === "resolved") return "Resolved";
+  if (status === "rejected") return "Rejected";
+  return "Not disputed";
+}
+
+function settlementStatus(status?: string | null): PaymentRow["settlementStatus"] {
+  if (status === "matched") return "Matched";
+  if (status === "exception") return "Exception";
+  if (status === "settled") return "Settled";
+  return "Unreconciled";
+}
+
 function orderStatus(status?: string | null): OrderRow["status"] {
   if (status === "confirmed") return "Confirmed";
   if (status === "billed") return "Billed";
@@ -558,6 +629,18 @@ async function findPurchaseOrderByNumber(supabase: ReturnType<typeof createSupab
     brandName: brand?.name ?? "Unassigned",
     officeName: branch?.office_name ?? "Unassigned source office"
   };
+}
+
+async function findBillIdByNumber(supabase: ReturnType<typeof createSupabaseAdminClient>, billNumber?: string) {
+  if (!billNumber || billNumber === "Unallocated" || billNumber === "Draft receipt") return null;
+  const { data, error } = await supabase
+    .from("bills")
+    .select("id")
+    .eq("bill_number", billNumber)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.id ?? null;
 }
 
 async function findUserIdByName(supabase: ReturnType<typeof createSupabaseAdminClient>, userName?: string) {
@@ -961,7 +1044,9 @@ export async function createOutletAction(formData: FormData): Promise<OutletRow>
     brand: formValue(formData, "brand"),
     territory: formValue(formData, "territory"),
     assignedSalesman: formValue(formData, "assignedSalesman"),
-    status: formValue(formData, "status")
+    status: formValue(formData, "status"),
+    creditLimit: formValue(formData, "creditLimit"),
+    creditHoldStatus: formValue(formData, "creditHoldStatus") || "Clear"
   });
 
   const supabase = createSupabaseAdminClient();
@@ -982,9 +1067,11 @@ export async function createOutletAction(formData: FormData): Promise<OutletRow>
       channel_type: input.channel,
       territory_id: territoryId,
       assigned_executive_id: assignedExecutiveId,
-      status: statusMap[input.status]
+      status: statusMap[input.status],
+      credit_limit: optionalNumberInput(input.creditLimit) ?? 0,
+      credit_hold_status: creditHoldStatusMap[input.creditHoldStatus]
     })
-    .select("id,name,owner_name,phone,city,channel_type,status")
+    .select("id,name,owner_name,phone,city,channel_type,status,credit_limit,credit_hold_status")
     .single();
 
   if (outletError) throw new Error(outletError.message);
@@ -1010,7 +1097,9 @@ export async function createOutletAction(formData: FormData): Promise<OutletRow>
     brand: input.brand || "Unassigned",
     territory: input.territory || "Unassigned",
     assignedSalesman: input.assignedSalesman || "Unassigned",
-    status: outletStatus(outlet.status)
+    status: outletStatus(outlet.status),
+    creditLimit: numberValue(outlet.credit_limit),
+    creditHoldStatus: creditHoldStatus(outlet.credit_hold_status)
   };
 }
 
@@ -1025,7 +1114,9 @@ export async function updateOutletAction(formData: FormData): Promise<OutletRow>
     brand: formValue(formData, "brand"),
     territory: formValue(formData, "territory"),
     assignedSalesman: formValue(formData, "assignedSalesman"),
-    status: formValue(formData, "status")
+    status: formValue(formData, "status"),
+    creditLimit: formValue(formData, "creditLimit"),
+    creditHoldStatus: formValue(formData, "creditHoldStatus") || "Clear"
   });
 
   const supabase = createSupabaseAdminClient();
@@ -1047,10 +1138,12 @@ export async function updateOutletAction(formData: FormData): Promise<OutletRow>
       territory_id: territoryId,
       assigned_executive_id: assignedExecutiveId,
       status: statusMap[input.status],
+      credit_limit: optionalNumberInput(input.creditLimit) ?? 0,
+      credit_hold_status: creditHoldStatusMap[input.creditHoldStatus],
       updated_at: new Date().toISOString()
     })
     .eq("id", id)
-    .select("id,name,owner_name,phone,city,channel_type,status")
+    .select("id,name,owner_name,phone,city,channel_type,status,credit_limit,credit_hold_status")
     .single();
 
   if (outletError) throw new Error(outletError.message);
@@ -1078,7 +1171,9 @@ export async function updateOutletAction(formData: FormData): Promise<OutletRow>
     brand: input.brand || "Unassigned",
     territory: input.territory || "Unassigned",
     assignedSalesman: input.assignedSalesman || "Unassigned",
-    status: outletStatus(outlet.status)
+    status: outletStatus(outlet.status),
+    creditLimit: numberValue(outlet.credit_limit),
+    creditHoldStatus: creditHoldStatus(outlet.credit_hold_status)
   };
 }
 
@@ -1476,31 +1571,50 @@ export async function createPaymentAction(formData: FormData): Promise<PaymentRo
   const input = paymentSchema.parse({
     outlet: formValue(formData, "outlet"),
     brand: formValue(formData, "brand"),
+    billNumber: formValue(formData, "billNumber"),
     amountDue: formValue(formData, "amountDue"),
     amountCollected: formValue(formData, "amountCollected"),
     dueDate: formValue(formData, "dueDate"),
     promisedPaymentDate: formValue(formData, "promisedPaymentDate"),
     paymentMode: formValue(formData, "paymentMode"),
     status: formValue(formData, "status"),
-    riskLevel: formValue(formData, "riskLevel")
+    riskLevel: formValue(formData, "riskLevel"),
+    receiptNumber: formValue(formData, "receiptNumber"),
+    collectorName: formValue(formData, "collectorName"),
+    allocationSummary: formValue(formData, "allocationSummary"),
+    writeOffStatus: formValue(formData, "writeOffStatus") || "Not requested",
+    disputeStatus: formValue(formData, "disputeStatus") || "Not disputed",
+    settlementStatus: formValue(formData, "settlementStatus") || "Unreconciled",
+    settlementReference: formValue(formData, "settlementReference"),
+    settlementDate: formValue(formData, "settlementDate")
   });
 
   const supabase = createSupabaseAdminClient();
-  const [brandId, outletId] = await Promise.all([findBrandIdByName(supabase, input.brand), findOutletIdByName(supabase, input.outlet)]);
+  const [brandId, outletId, billId] = await Promise.all([findBrandIdByName(supabase, input.brand), findOutletIdByName(supabase, input.outlet), findBillIdByNumber(supabase, input.billNumber)]);
+  const generatedReceiptNumber = input.receiptNumber || `RCPT-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
   const { data, error } = await supabase
     .from("payments")
     .insert({
       outlet_id: outletId,
       brand_id: brandId,
+      bill_id: billId,
       amount_due: numberInput(input.amountDue),
       amount_collected: input.amountCollected ? numberInput(input.amountCollected) : 0,
       due_date: input.dueDate || null,
       promised_payment_date: input.promisedPaymentDate || null,
       payment_mode: input.paymentMode || null,
+      receipt_number: generatedReceiptNumber,
+      collector_name: input.collectorName || null,
+      allocation_summary: input.allocationSummary || null,
+      write_off_status: writeOffStatusMap[input.writeOffStatus],
+      dispute_status: disputeStatusMap[input.disputeStatus],
+      settlement_status: settlementStatusMap[input.settlementStatus],
+      settlement_reference: input.settlementReference || null,
+      settlement_date: input.settlementDate || null,
       status: paymentStatusMap[input.status],
       risk_level: riskLevelMap[input.riskLevel]
     })
-    .select("id,amount_due,amount_collected,due_date,promised_payment_date,payment_mode,status,risk_level")
+    .select("id,bill_id,amount_due,amount_collected,due_date,promised_payment_date,payment_mode,receipt_number,collector_name,allocation_summary,write_off_status,dispute_status,settlement_status,settlement_reference,settlement_date,status,risk_level")
     .single();
 
   if (error) throw new Error(error.message);
@@ -1509,13 +1623,23 @@ export async function createPaymentAction(formData: FormData): Promise<PaymentRo
     id: data.id,
     outlet: input.outlet,
     brand: input.brand,
+    billId: data.bill_id ?? "",
+    billNumber: input.billNumber || "Unallocated",
     amountDue: Number(data.amount_due ?? 0),
     amountCollected: Number(data.amount_collected ?? 0),
     dueDate: data.due_date ?? "No due date",
     promisedPaymentDate: data.promised_payment_date ?? "No promise",
     paymentMode: data.payment_mode ?? "Unassigned",
     status: paymentStatus(data.status),
-    riskLevel: riskLevel(data.risk_level)
+    riskLevel: riskLevel(data.risk_level),
+    receiptNumber: data.receipt_number ?? generatedReceiptNumber,
+    collectorName: data.collector_name ?? "Unassigned",
+    allocationSummary: data.allocation_summary ?? "",
+    writeOffStatus: writeOffStatus(data.write_off_status),
+    disputeStatus: disputeStatus(data.dispute_status),
+    settlementStatus: settlementStatus(data.settlement_status),
+    settlementReference: data.settlement_reference ?? "",
+    settlementDate: data.settlement_date ?? "No settlement date"
   };
 }
 
@@ -1524,33 +1648,51 @@ export async function updatePaymentAction(formData: FormData): Promise<PaymentRo
   const input = paymentSchema.parse({
     outlet: formValue(formData, "outlet"),
     brand: formValue(formData, "brand"),
+    billNumber: formValue(formData, "billNumber"),
     amountDue: formValue(formData, "amountDue"),
     amountCollected: formValue(formData, "amountCollected"),
     dueDate: formValue(formData, "dueDate"),
     promisedPaymentDate: formValue(formData, "promisedPaymentDate"),
     paymentMode: formValue(formData, "paymentMode"),
     status: formValue(formData, "status"),
-    riskLevel: formValue(formData, "riskLevel")
+    riskLevel: formValue(formData, "riskLevel"),
+    receiptNumber: formValue(formData, "receiptNumber"),
+    collectorName: formValue(formData, "collectorName"),
+    allocationSummary: formValue(formData, "allocationSummary"),
+    writeOffStatus: formValue(formData, "writeOffStatus") || "Not requested",
+    disputeStatus: formValue(formData, "disputeStatus") || "Not disputed",
+    settlementStatus: formValue(formData, "settlementStatus") || "Unreconciled",
+    settlementReference: formValue(formData, "settlementReference"),
+    settlementDate: formValue(formData, "settlementDate")
   });
 
   const supabase = createSupabaseAdminClient();
-  const [brandId, outletId] = await Promise.all([findBrandIdByName(supabase, input.brand), findOutletIdByName(supabase, input.outlet)]);
+  const [brandId, outletId, billId] = await Promise.all([findBrandIdByName(supabase, input.brand), findOutletIdByName(supabase, input.outlet), findBillIdByNumber(supabase, input.billNumber)]);
   const { data, error } = await supabase
     .from("payments")
     .update({
       outlet_id: outletId,
       brand_id: brandId,
+      bill_id: billId,
       amount_due: numberInput(input.amountDue),
       amount_collected: input.amountCollected ? numberInput(input.amountCollected) : 0,
       due_date: input.dueDate || null,
       promised_payment_date: input.promisedPaymentDate || null,
       payment_mode: input.paymentMode || null,
+      receipt_number: input.receiptNumber || null,
+      collector_name: input.collectorName || null,
+      allocation_summary: input.allocationSummary || null,
+      write_off_status: writeOffStatusMap[input.writeOffStatus],
+      dispute_status: disputeStatusMap[input.disputeStatus],
+      settlement_status: settlementStatusMap[input.settlementStatus],
+      settlement_reference: input.settlementReference || null,
+      settlement_date: input.settlementDate || null,
       status: paymentStatusMap[input.status],
       risk_level: riskLevelMap[input.riskLevel],
       updated_at: new Date().toISOString()
     })
     .eq("id", id)
-    .select("id,amount_due,amount_collected,due_date,promised_payment_date,payment_mode,status,risk_level")
+    .select("id,bill_id,amount_due,amount_collected,due_date,promised_payment_date,payment_mode,receipt_number,collector_name,allocation_summary,write_off_status,dispute_status,settlement_status,settlement_reference,settlement_date,status,risk_level")
     .single();
 
   if (error) throw new Error(error.message);
@@ -1559,13 +1701,23 @@ export async function updatePaymentAction(formData: FormData): Promise<PaymentRo
     id: data.id,
     outlet: input.outlet,
     brand: input.brand,
+    billId: data.bill_id ?? "",
+    billNumber: input.billNumber || "Unallocated",
     amountDue: Number(data.amount_due ?? 0),
     amountCollected: Number(data.amount_collected ?? 0),
     dueDate: data.due_date ?? "No due date",
     promisedPaymentDate: data.promised_payment_date ?? "No promise",
     paymentMode: data.payment_mode ?? "Unassigned",
     status: paymentStatus(data.status),
-    riskLevel: riskLevel(data.risk_level)
+    riskLevel: riskLevel(data.risk_level),
+    receiptNumber: data.receipt_number ?? "Draft receipt",
+    collectorName: data.collector_name ?? "Unassigned",
+    allocationSummary: data.allocation_summary ?? "",
+    writeOffStatus: writeOffStatus(data.write_off_status),
+    disputeStatus: disputeStatus(data.dispute_status),
+    settlementStatus: settlementStatus(data.settlement_status),
+    settlementReference: data.settlement_reference ?? "",
+    settlementDate: data.settlement_date ?? "No settlement date"
   };
 }
 
@@ -2133,10 +2285,12 @@ export async function createBillAction(formData: FormData): Promise<BillRow> {
   const input = billSchema.parse({
     outlet: formValue(formData, "outlet"),
     brand: formValue(formData, "brand"),
+    linkedOrderId: formValue(formData, "linkedOrderId"),
     billNumber: formValue(formData, "billNumber"),
     billDate: formValue(formData, "billDate"),
     totalAmount: formValue(formData, "totalAmount"),
-    paymentStatus: formValue(formData, "paymentStatus")
+    paymentStatus: formValue(formData, "paymentStatus"),
+    billImagePath: formValue(formData, "billImagePath")
   });
 
   const supabase = createSupabaseAdminClient();
@@ -2144,14 +2298,16 @@ export async function createBillAction(formData: FormData): Promise<BillRow> {
   const { data, error } = await supabase
     .from("bills")
     .insert({
+      order_id: input.linkedOrderId || null,
       outlet_id: outletId,
       brand_id: brandId,
       bill_number: input.billNumber || null,
       bill_date: input.billDate || null,
       total_amount: numberInput(input.totalAmount),
-      payment_status: paymentStatusMap[input.paymentStatus]
+      payment_status: paymentStatusMap[input.paymentStatus],
+      bill_image_path: input.billImagePath || null
     })
-    .select("id,bill_number,bill_date,total_amount,payment_status")
+    .select("id,order_id,bill_number,bill_date,total_amount,payment_status,bill_image_path")
     .single();
 
   if (error) throw new Error(error.message);
@@ -2160,10 +2316,12 @@ export async function createBillAction(formData: FormData): Promise<BillRow> {
     id: data.id,
     outlet: input.outlet,
     brand: input.brand,
+    orderId: data.order_id ?? "",
     billNumber: data.bill_number ?? "Unnumbered",
     billDate: data.bill_date ?? "No bill date",
     totalAmount: Number(data.total_amount ?? 0),
-    paymentStatus: paymentStatus(data.payment_status)
+    paymentStatus: paymentStatus(data.payment_status),
+    billImagePath: data.bill_image_path ?? ""
   };
 }
 
@@ -2172,10 +2330,12 @@ export async function updateBillAction(formData: FormData): Promise<BillRow> {
   const input = billSchema.parse({
     outlet: formValue(formData, "outlet"),
     brand: formValue(formData, "brand"),
+    linkedOrderId: formValue(formData, "linkedOrderId"),
     billNumber: formValue(formData, "billNumber"),
     billDate: formValue(formData, "billDate"),
     totalAmount: formValue(formData, "totalAmount"),
-    paymentStatus: formValue(formData, "paymentStatus")
+    paymentStatus: formValue(formData, "paymentStatus"),
+    billImagePath: formValue(formData, "billImagePath")
   });
 
   const supabase = createSupabaseAdminClient();
@@ -2183,16 +2343,18 @@ export async function updateBillAction(formData: FormData): Promise<BillRow> {
   const { data, error } = await supabase
     .from("bills")
     .update({
+      order_id: input.linkedOrderId || null,
       outlet_id: outletId,
       brand_id: brandId,
       bill_number: input.billNumber || null,
       bill_date: input.billDate || null,
       total_amount: numberInput(input.totalAmount),
       payment_status: paymentStatusMap[input.paymentStatus],
+      bill_image_path: input.billImagePath || null,
       updated_at: new Date().toISOString()
     })
     .eq("id", id)
-    .select("id,bill_number,bill_date,total_amount,payment_status")
+    .select("id,order_id,bill_number,bill_date,total_amount,payment_status,bill_image_path")
     .single();
 
   if (error) throw new Error(error.message);
@@ -2201,10 +2363,12 @@ export async function updateBillAction(formData: FormData): Promise<BillRow> {
     id: data.id,
     outlet: input.outlet,
     brand: input.brand,
+    orderId: data.order_id ?? "",
     billNumber: data.bill_number ?? "Unnumbered",
     billDate: data.bill_date ?? "No bill date",
     totalAmount: Number(data.total_amount ?? 0),
-    paymentStatus: paymentStatus(data.payment_status)
+    paymentStatus: paymentStatus(data.payment_status),
+    billImagePath: data.bill_image_path ?? ""
   };
 }
 

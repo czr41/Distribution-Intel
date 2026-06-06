@@ -43,6 +43,8 @@ type OutletResult = {
   city: string;
   channel_type: string | null;
   status: string | null;
+  credit_limit: number | string | null;
+  credit_hold_status: string | null;
   outlet_brands?: OutletBrandJoin[] | null;
   territories?: { name?: string | null } | { name?: string | null }[] | null;
   field_executives?: {
@@ -105,15 +107,25 @@ type SkuResult = {
 
 type PaymentResult = {
   id: string;
+  bill_id: string | null;
   amount_due: number | string | null;
   amount_collected: number | string | null;
   due_date: string | null;
   promised_payment_date: string | null;
   payment_mode: string | null;
+  receipt_number: string | null;
+  collector_name: string | null;
+  allocation_summary: string | null;
+  write_off_status: string | null;
+  dispute_status: string | null;
+  settlement_status: string | null;
+  settlement_reference: string | null;
+  settlement_date: string | null;
   status: string | null;
   risk_level: string | null;
   outlets?: { name?: string | null } | { name?: string | null }[] | null;
   brands?: { name?: string | null } | { name?: string | null }[] | null;
+  bills?: { bill_number?: string | null } | { bill_number?: string | null }[] | null;
 };
 
 type OrderResult = {
@@ -141,10 +153,12 @@ type OrderResult = {
 
 type BillResult = {
   id: string;
+  order_id: string | null;
   bill_number: string | null;
   bill_date: string | null;
   total_amount: number | string | null;
   payment_status: string | null;
+  bill_image_path: string | null;
   outlets?: { name?: string | null } | { name?: string | null }[] | null;
   brands?: { name?: string | null } | { name?: string | null }[] | null;
 };
@@ -323,6 +337,35 @@ function displayRiskLevel(risk?: string | null): PaymentRow["riskLevel"] {
   if (risk === "high") return "High";
   if (risk === "critical") return "Critical";
   return "Medium";
+}
+
+function displayCreditHoldStatus(status?: string | null): OutletRow["creditHoldStatus"] {
+  if (status === "watch") return "Watch";
+  if (status === "hold") return "Hold";
+  if (status === "blocked") return "Blocked";
+  return "Clear";
+}
+
+function displayWriteOffStatus(status?: string | null): PaymentRow["writeOffStatus"] {
+  if (status === "requested") return "Requested";
+  if (status === "approved") return "Approved";
+  if (status === "rejected") return "Rejected";
+  return "Not requested";
+}
+
+function displayDisputeStatus(status?: string | null): PaymentRow["disputeStatus"] {
+  if (status === "opened") return "Opened";
+  if (status === "under_review") return "Under review";
+  if (status === "resolved") return "Resolved";
+  if (status === "rejected") return "Rejected";
+  return "Not disputed";
+}
+
+function displaySettlementStatus(status?: string | null): PaymentRow["settlementStatus"] {
+  if (status === "matched") return "Matched";
+  if (status === "exception") return "Exception";
+  if (status === "settled") return "Settled";
+  return "Unreconciled";
 }
 
 function displayPaymentStatus(status?: string | null): PaymentRow["status"] {
@@ -691,7 +734,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     supabase.from("users").select("id,name,email,phone,role,status").order("created_at", { ascending: false }),
     supabase
       .from("outlets")
-      .select("id,name,owner_name,phone,city,channel_type,status,outlet_brands(brands(name)),territories(name),field_executives(users!field_executives_user_id_fkey(name))")
+      .select("id,name,owner_name,phone,city,channel_type,status,credit_limit,credit_hold_status,outlet_brands(brands(name)),territories(name),field_executives(users!field_executives_user_id_fkey(name))")
       .order("created_at", { ascending: false }),
     supabase
       .from("field_executives")
@@ -705,7 +748,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     supabase.from("skus").select("id,name,code,category,unit,mrp,image_url,status,brands(name)").order("name", { ascending: true }),
     supabase
       .from("payments")
-      .select("id,amount_due,amount_collected,due_date,promised_payment_date,payment_mode,status,risk_level,outlets(name),brands(name)")
+      .select("id,bill_id,amount_due,amount_collected,due_date,promised_payment_date,payment_mode,receipt_number,collector_name,allocation_summary,write_off_status,dispute_status,settlement_status,settlement_reference,settlement_date,status,risk_level,outlets(name),brands(name),bills(bill_number)")
       .order("created_at", { ascending: false }),
     supabase
       .from("orders")
@@ -713,7 +756,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       .order("created_at", { ascending: false }),
     supabase
       .from("bills")
-      .select("id,bill_number,bill_date,total_amount,payment_status,outlets(name),brands(name)")
+      .select("id,order_id,bill_number,bill_date,total_amount,payment_status,bill_image_path,outlets(name),brands(name)")
       .order("created_at", { ascending: false }),
     supabase
       .from("brand_branches")
@@ -812,7 +855,9 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       assignedSalesman: executiveUser?.name ?? "Unassigned",
       status: displayStatus(outlet.status),
       owner: outlet.owner_name ?? "",
-      phone: outlet.phone ?? ""
+      phone: outlet.phone ?? "",
+      creditLimit: numberValue(outlet.credit_limit),
+      creditHoldStatus: displayCreditHoldStatus(outlet.credit_hold_status)
     };
   });
 
@@ -893,18 +938,29 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
   const payments: PaymentRow[] = ((paymentsResult.data ?? []) as PaymentResult[]).map((payment) => {
     const outlet = Array.isArray(payment.outlets) ? payment.outlets[0] : payment.outlets;
     const brand = Array.isArray(payment.brands) ? payment.brands[0] : payment.brands;
+    const bill = Array.isArray(payment.bills) ? payment.bills[0] : payment.bills;
 
     return {
       id: payment.id,
       outlet: outlet?.name ?? "Unassigned",
       brand: brand?.name ?? "Unassigned",
+      billId: payment.bill_id ?? "",
+      billNumber: bill?.bill_number ?? "Unallocated",
       amountDue: numberValue(payment.amount_due),
       amountCollected: numberValue(payment.amount_collected),
       dueDate: payment.due_date ?? "No due date",
       promisedPaymentDate: payment.promised_payment_date ?? "No promise",
       paymentMode: payment.payment_mode ?? "Unassigned",
       status: displayPaymentStatus(payment.status),
-      riskLevel: displayRiskLevel(payment.risk_level)
+      riskLevel: displayRiskLevel(payment.risk_level),
+      receiptNumber: payment.receipt_number ?? "Draft receipt",
+      collectorName: payment.collector_name ?? "Unassigned",
+      allocationSummary: payment.allocation_summary ?? "",
+      writeOffStatus: displayWriteOffStatus(payment.write_off_status),
+      disputeStatus: displayDisputeStatus(payment.dispute_status),
+      settlementStatus: displaySettlementStatus(payment.settlement_status),
+      settlementReference: payment.settlement_reference ?? "",
+      settlementDate: payment.settlement_date ?? "No settlement date"
     };
   });
 
@@ -937,10 +993,12 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       id: bill.id,
       outlet: outlet?.name ?? "Unassigned",
       brand: brand?.name ?? "Unassigned",
+      orderId: bill.order_id ?? "",
       billNumber: bill.bill_number ?? "Unnumbered",
       billDate: bill.bill_date ?? "No bill date",
       totalAmount: numberValue(bill.total_amount),
-      paymentStatus: displayPaymentStatus(bill.payment_status)
+      paymentStatus: displayPaymentStatus(bill.payment_status),
+      billImagePath: bill.bill_image_path ?? ""
     };
   });
 
