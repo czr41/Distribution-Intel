@@ -64,7 +64,7 @@ type MediaLabResult = {
 type ModalType = "outlet" | "brand" | "procurementOffice" | "materialFlow" | "purchaseOrder" | "goodsReceipt" | "supplierPayable" | "sku" | "salesman" | "user" | "task" | "territory" | "payment" | "order" | "bill" | null;
 type BulkImportType = Exclude<ModalType, null>;
 type IntegrationNotice = { type: "success" | "error"; message: string };
-type SalesWorkflow = "visit" | "order" | "payment" | "evidence";
+type SalesWorkflow = "visit" | "order" | "bill" | "payment" | "evidence";
 type ArchiveRequest = { type: Exclude<ModalType, null>; id: string; label: string; impact: string };
 type SalesCartLine = { skuId: string; name: string; code: string; brand: string; quantity: number; unitPrice: number };
 type EditableMasterData =
@@ -521,6 +521,12 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
     return saved;
   }
 
+  async function createSalesBill(form: FormData) {
+    const saved = await actions.createBill(form);
+    setBills((current) => [saved, ...current]);
+    return saved;
+  }
+
   async function createSalesPayment(form: FormData) {
     const amountCollected = Number(String(form.get("amountCollected") ?? "0"));
     const amountDue = Number(String(form.get("amountDue") ?? "0"));
@@ -540,9 +546,11 @@ export function CommandCenterApp({ initialData, actions }: { initialData: Comman
         tasks={tasks}
         outlets={outlets}
         orders={orders}
+        bills={bills}
         payments={payments}
         onCreateVisit={createSalesVisit}
         onCreateOrder={createSalesOrder}
+        onCreateBill={createSalesBill}
         onCreatePayment={createSalesPayment}
         onLogout={() => setCurrentUser(null)}
       />
@@ -1942,9 +1950,11 @@ function SalesRepPortal({
   tasks,
   outlets,
   orders,
+  bills,
   payments,
   onCreateVisit,
   onCreateOrder,
+  onCreateBill,
   onCreatePayment,
   onLogout
 }: {
@@ -1954,9 +1964,11 @@ function SalesRepPortal({
   tasks: TaskRow[];
   outlets: OutletRow[];
   orders: OrderRow[];
+  bills: BillRow[];
   payments: PaymentRow[];
   onCreateVisit: (formData: FormData) => Promise<TaskRow>;
   onCreateOrder: (formData: FormData) => Promise<OrderRow>;
+  onCreateBill: (formData: FormData) => Promise<BillRow>;
   onCreatePayment: (formData: FormData) => Promise<PaymentRow>;
   onLogout: () => void;
 }) {
@@ -1970,6 +1982,7 @@ function SalesRepPortal({
   const [orderCart, setOrderCart] = useState<SalesCartLine[]>([]);
   const outletOptions = outlets.length ? outlets.map((outlet) => outlet.name) : ["Unassigned"];
   const brandOptions = brands.length ? brands.map((brand) => brand.name) : ["Unassigned"];
+  const recentOpenOrders = orders.filter((order) => !["Billed", "Delivered", "Cancelled"].includes(order.status)).slice(0, 6);
   const selectedOrderSku = skus.find((sku) => sku.id === selectedOrderSkuId) ?? skus[0];
   const filteredOrderSkus = skus.filter((sku) => {
     const haystack = `${sku.name} ${sku.code} ${sku.brand} ${sku.category}`.toLowerCase();
@@ -2074,6 +2087,22 @@ function SalesRepPortal({
     }
   }
 
+  async function submitBill(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setNotice(null);
+    setIsSubmitting(true);
+    try {
+      await onCreateBill(new FormData(formElement));
+      formElement.reset();
+      setNotice({ type: "success", message: "Invoice captured and added to the bill register." });
+    } catch (error) {
+      setNotice({ type: "error", message: error instanceof Error ? error.message : "Invoice could not be captured." });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   async function submitEvidence(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -2116,7 +2145,7 @@ function SalesRepPortal({
         <Metric label="Assigned tasks" value={tasks.length} detail="Follow-ups and escalations" />
         <Metric label="Outlets" value={outlets.length} detail="Visible retailer universe" />
         <Metric label="Open orders" value={orders.filter((order) => !["Delivered", "Cancelled"].includes(order.status)).length} detail="To confirm or follow up" />
-        <Metric label="Payment risk" value={payments.filter((payment) => ["High", "Critical"].includes(payment.riskLevel)).length} detail="High-priority collections" />
+        <Metric label="Bills captured" value={bills.length} detail="Invoices in register" />
       </section>
       <section className="ops-grid">
         <article className="panel">
@@ -2129,6 +2158,7 @@ function SalesRepPortal({
           <div className="sales-action-grid">
             <button className="primary-button" onClick={() => setActiveWorkflow("visit")}>Start Visit</button>
             <button className="primary-button" onClick={() => setActiveWorkflow("order")}>Create Order</button>
+            <button className="primary-button" onClick={() => setActiveWorkflow("bill")}>Create Bill</button>
             <button className="primary-button" onClick={() => setActiveWorkflow("payment")}>Collect Payment</button>
             <button className="primary-button" onClick={() => setActiveWorkflow("evidence")}>Upload Evidence</button>
           </div>
@@ -2248,6 +2278,53 @@ function SalesRepPortal({
                 )}
                 <div className="action-row">
                   <button className="approve" disabled={isSubmitting} type="submit">Capture Order</button>
+                </div>
+              </form>
+            )}
+
+            {activeWorkflow === "bill" && (
+              <form className="master-form" onSubmit={submitBill}>
+                <div className="form-grid">
+                  <Select name="outlet" label="Outlet" options={outletOptions} />
+                  <Select name="brand" label="Client / brand" options={brandOptions} />
+                  <Input name="billNumber" label="Invoice / bill number" placeholder="INV-2026-001" required={false} />
+                  <Input name="billDate" label="Bill date" type="date" required={false} />
+                  <Input name="totalAmount" label="Invoice amount" type="number" placeholder="12400" />
+                  <Select name="paymentStatus" label="Payment status" options={["Due", "Partially paid", "Paid", "Overdue", "Disputed", "Written off"]} defaultValue="Due" />
+                  <div className="sales-billing-context wide">
+                    <div className="queue-top">
+                      <strong>Open order context</strong>
+                      <span className="tag blue">{recentOpenOrders.length} open</span>
+                    </div>
+                    {recentOpenOrders.map((order) => (
+                      <article className="sales-cart-line" key={order.id}>
+                        <div>
+                          <strong>{order.outlet}</strong>
+                          <span>{order.sku} - {order.brand}</span>
+                        </div>
+                        <b>{money(order.expectedValue)}</b>
+                        <button
+                          className="link-button"
+                          type="button"
+                          onClick={(event) => {
+                            const form = event.currentTarget.form;
+                            const outletInput = form?.elements.namedItem("outlet") as HTMLSelectElement | null;
+                            const brandInput = form?.elements.namedItem("brand") as HTMLSelectElement | null;
+                            const amountInput = form?.elements.namedItem("totalAmount") as HTMLInputElement | null;
+                            if (outletInput) outletInput.value = order.outlet;
+                            if (brandInput) brandInput.value = order.brand;
+                            if (amountInput) amountInput.value = String(order.expectedValue);
+                          }}
+                        >
+                          Use
+                        </button>
+                      </article>
+                    ))}
+                    {!recentOpenOrders.length && <span className="cart-empty-note">No open orders yet. You can still capture a direct invoice for the outlet.</span>}
+                  </div>
+                </div>
+                <div className="action-row">
+                  <button className="approve" disabled={isSubmitting} type="submit">Capture Bill</button>
                 </div>
               </form>
             )}
